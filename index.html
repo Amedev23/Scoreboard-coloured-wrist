@@ -53,13 +53,12 @@
     .team-blue { background: var(--blue); }
     .team-green { background: var(--green); }
     .team-yellow { background: var(--yellow); }
-    .projector-wrap { max-width: 1365px; margin: 0 auto; width: 100%; height: 640px; background: #000; border: 1px solid #171717; display: grid; grid-template-rows: 90px 100px auto auto; overflow: hidden; position: relative; }
-    .proj-header { position: relative; display: flex; align-items: center; justify-content: center; padding: 6px 16px 4px; border-bottom: 1px solid #121212; }
+    .projector-wrap { max-width: 1365px; margin: 0 auto; width: 100%; height: 640px; background: #000; border: 1px solid #171717; display: grid; grid-template-rows: 84px 92px auto auto; overflow: hidden; position: relative; }
+    .proj-header { position: relative; display: flex; align-items: center; justify-content: center; padding: 4px 14px 2px; border-bottom: 1px solid #121212; }
     .brand { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
-    .logo { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; }
-    .brand-eyebrow { color: #CC3318; text-transform: uppercase; letter-spacing: .1em; font-size: 20px; font-weight: 700; line-height: 1; }
+    .logo { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; }
     .proj-badges { position: absolute; top: 8px; right: 12px; display: flex; gap: 8px; align-items: center; }
-    .timer-strip { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100px; margin-top: 12px; border-bottom: 1px solid #121212; }
+    .timer-strip { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 92px; margin-top: 8px; border-bottom: 1px solid #121212; }
     .mode-label { font-family: 'Bebas Neue', sans-serif; text-transform: uppercase; letter-spacing: .08em; font-size: 28px; line-height: 1; }
     .digits { font-family: 'Bebas Neue', sans-serif; font-size: 72px; line-height: 1; }
     .pulse { animation: pulse .9s infinite; }
@@ -77,12 +76,12 @@
     .bar-track { width: 100%; height: 22px; background: #161616; border-radius: 99px; overflow: hidden; }
     .bar-fill { height: 100%; width: 0%; border-radius: 99px; transition: width 550ms cubic-bezier(0.34, 1.56, 0.64, 1); }
     .score-num { text-align: right; font-family: 'Bebas Neue', sans-serif; font-size: 28px; }
-    .mission { border-top: 1px solid #121212; padding: 18px 22px 20px; display: flex; flex-direction: column; justify-content: space-between; flex: 1; align-self: stretch; height: 100%; }
+    .mission { border-top: 1px solid #121212; padding: 14px 18px 14px; display: flex; flex-direction: column; justify-content: space-between; flex: 1; align-self: stretch; height: 100%; }
     .eyebrow { color: var(--red); letter-spacing: .1em; font-weight: 700; font-size: 14px; }
     .headline { font-family: 'Bebas Neue', sans-serif; font-size: 42px; margin-top: 4px; line-height: 1; }
     .divider { height: 2px; background: var(--red); margin: 8px 0 10px; }
-    .cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; flex: 1; }
-    .card { background: #101010; border: 1px solid #242424; border-radius: 10px; padding: 16px; color: #999; font-size: 17px; line-height: 1.5; min-height: 130px; }
+    .cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; flex: 1; }
+    .card { background: #101010; border: 1px solid #242424; border-radius: 10px; padding: 12px; color: #F5F0E8; font-size: 17px; font-weight: 600; line-height: 1.45; min-height: 112px; }
     .card-step { font-family: 'Bebas Neue', sans-serif; font-size: 32px; color: #CC3318; line-height: 1; }
     .card strong { color: #F5F0E8; font-weight: 700; }
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.87); z-index: 120; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -529,7 +528,6 @@
           <div class="proj-header">
             <div class="brand">
               <img class="logo" src="https://kajabi-storefronts-production.kajabi-cdn.com/kajabi-storefronts-production/file-uploads/themes/2165402848/settings_images/516ffa-bf-0ad1-4673-8eaf2dd32e8_Untitled_design_32_.png" alt="Balancers logo" />
-              <div class="brand-eyebrow">WELCOME TO BALANCERS</div>
             </div>
             <div class="proj-badges">
               <span class="badge badge-rt"><span class="rt-dot" style="background:${realtimeColor}"></span>${realtimeStatus}</span>
