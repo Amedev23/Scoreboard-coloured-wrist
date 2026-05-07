@@ -210,7 +210,10 @@
     }
 
     async function awardTeam(teamKey, isManual = false) {
-      const res = await patchState({ [teamKey]: Number(state[teamKey] || 0) + 3 });
+      const res = await patchState({
+        [teamKey]: Number(state[teamKey] || 0) + 3,
+        round: Number(state.round || 1) + 1
+      });
       if (!res.error) {
         addLog(`${TEAM_META[teamKey].name} +3`);
         if (!isManual) pushSessionAction({ type: 'award', team: teamKey, delta: -3 });
@@ -256,7 +259,7 @@
     }
 
     async function resolveChallengeOutcome() {
-      const res = await patchState({ timer_mode: 'idle', timer_secs: 0, round: Number(state.round || 1) + 1 });
+      const res = await patchState({ timer_mode: 'idle', timer_secs: 0 });
       if (res.error) { alert(res.error); return; }
       const winner = getLeadingTeamKey();
       if (!winner) addLog('Challenge ended - tie');
