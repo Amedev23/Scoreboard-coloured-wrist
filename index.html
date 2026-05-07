@@ -117,7 +117,8 @@
     const pickerOverlay = document.getElementById('pickerOverlay');
     const resultOverlay = document.getElementById('resultOverlay');
 
-    let supabase = null;
+    let supabaseClient = null;
+    let isLocalOnly = false;
     let state = { ...DEFAULT_STATE };
     let previousState = null;
     let isAdmin = false;
@@ -133,11 +134,22 @@
       return `${m}:${s}`;
     }
 
+    function hasPlaceholderSupabaseConfig() {
+      const url = String(SUPABASE_URL || '').trim();
+      const key = String(SUPABASE_ANON_KEY || '').trim();
+      const placeholderTokens = ['YOUR_', 'PLACEHOLDER', 'CHANGE_ME', 'YOUR_SUPABASE'];
+
+      if (!url || !key) return true;
+      if (!url.includes('http')) return true;
+      return placeholderTokens.some(token => url.includes(token) || key.includes(token));
+    }
+
     async function ensureRow() {
-      const { data, error } = await supabase.from('challenge_state').select('*').eq('id', 1).maybeSingle();
+      if (isLocalOnly || !supabaseClient) return { ...state };
+      const { data, error } = await supabaseClient.from('challenge_state').select('*').eq('id', 1).maybeSingle();
       if (error) throw error;
       if (!data) {
-        const { data: ins, error: insErr } = await supabase.from('challenge_state').insert(DEFAULT_STATE).select('*').single();
+        const { data: ins, error: insErr } = await supabaseClient.from('challenge_state').insert(DEFAULT_STATE).select('*').single();
         if (insErr) throw insErr;
         return ins;
       }
@@ -147,7 +159,11 @@
     async function patchState(patch) {
       const next = { ...state, ...patch };
       ['red', 'blue', 'green', 'yellow'].forEach(k => next[k] = Math.max(0, Number(next[k] || 0)));
-      const { data, error } = await supabase.from('challenge_state').update(next).eq('id', 1).select('*').single();
+      if (isLocalOnly || !supabaseClient) {
+        applyIncomingState(next, true);
+        return next;
+      }
+      const { data, error } = await supabaseClient.from('challenge_state').update(next).eq('id', 1).select('*').single();
       if (error) return { error: error.message };
       applyIncomingState(data, true);
       return data;
@@ -442,27 +458,37 @@
     }
 
     async function boot() {
-      if (!SUPABASE_URL.includes('http') || SUPABASE_ANON_KEY.startsWith('YOUR_')) {
-        document.body.insertAdjacentHTML('beforeend', '<div class="layout"><div class="panel"><h2>Set Supabase credentials first</h2><p>Add your URL and anon key at the top of this file.</p></div></div>');
-        return;
+      const hasSdk = Boolean(window.supabase && typeof window.supabase.createClient === 'function');
+      isLocalOnly = hasPlaceholderSupabaseConfig() || !hasSdk;
+
+      if (!isLocalOnly) {
+        try {
+          supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+          applyIncomingState(await ensureRow());
+        } catch (err) {
+          console.error('Supabase startup failed, falling back to local-only mode:', err);
+          isLocalOnly = true;
+          supabaseClient = null;
+          applyIncomingState({ ...DEFAULT_STATE });
+        }
+      } else {
+        if (!hasSdk) console.warn('Supabase SDK missing. Running local-only mode.');
+        else console.warn('Supabase credentials are placeholders. Running local-only mode.');
+        applyIncomingState({ ...DEFAULT_STATE });
       }
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      try {
-        applyIncomingState(await ensureRow());
-      } catch (err) {
-        document.body.insertAdjacentHTML('beforeend', `<div class="layout"><div class="panel">Failed to load state: ${err.message}</div></div>`);
-        return;
-      }
+
       if (mode === 'host') hostEl.classList.remove('hidden');
       if (mode === 'projector') projectorEl.classList.remove('hidden');
       if (mode === 'both') setupTabs();
       renderAll();
-      supabase.channel('challenge_state_row').on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'challenge_state',
-        filter: 'id=eq.1'
-      }, payload => applyIncomingState(payload.new)).subscribe();
+      if (!isLocalOnly && supabaseClient) {
+        supabaseClient.channel('challenge_state_row').on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'challenge_state',
+          filter: 'id=eq.1'
+        }, payload => applyIncomingState(payload.new)).subscribe();
+      }
     }
 
     boot();
