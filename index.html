@@ -46,27 +46,27 @@
     .team-blue { background: var(--blue); }
     .team-green { background: var(--green); }
     .team-yellow { background: var(--yellow); }
-    .projector-wrap { max-width: 1365px; margin: 0 auto; width: 100%; height: 640px; background: #000; border: 1px solid #171717; display: grid; grid-template-rows: 52px 76px 1fr auto; overflow: hidden; position: relative; }
+    .projector-wrap { max-width: 1365px; margin: 0 auto; width: 100%; height: 640px; background: #000; border: 1px solid #171717; display: grid; grid-template-rows: 52px 64px 1fr auto; overflow: hidden; position: relative; }
     .proj-header { display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid #121212; }
     .brand { display: flex; align-items: center; gap: 10px; }
     .logo { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
     .timer-strip { display: flex; justify-content: space-between; align-items: center; padding: 0 18px; border-bottom: 1px solid #121212; }
     .mode-label { text-transform: uppercase; letter-spacing: .08em; font-size: 14px; font-weight: 600; }
-    .digits { font-family: 'Bebas Neue', sans-serif; font-size: 58px; line-height: 1; }
+    .digits { font-family: 'Bebas Neue', sans-serif; font-size: 48px; line-height: 1; }
     .pulse { animation: pulse .9s infinite; }
     @keyframes pulse { 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.08);} }
-    .scores { padding: 14px 18px; display: grid; gap: 10px; align-content: start; }
-    .score-row { display: grid; grid-template-columns: 120px 1fr 72px; align-items: center; gap: 10px; height: 44px; }
-    .team-name { font-family: 'Bebas Neue', sans-serif; font-size: 30px; }
-    .bar-track { width: 100%; height: 26px; background: #161616; border-radius: 99px; overflow: hidden; }
+    .scores { padding: 10px 16px; display: grid; gap: 7px; align-content: start; }
+    .score-row { display: grid; grid-template-columns: 110px 1fr 64px; align-items: center; gap: 8px; height: 36px; }
+    .team-name { font-family: 'Bebas Neue', sans-serif; font-size: 24px; }
+    .bar-track { width: 100%; height: 22px; background: #161616; border-radius: 99px; overflow: hidden; }
     .bar-fill { height: 100%; width: 0%; border-radius: 99px; transition: width 550ms cubic-bezier(0.34, 1.56, 0.64, 1); }
-    .score-num { text-align: right; font-family: 'Bebas Neue', sans-serif; font-size: 34px; }
-    .mission { border-top: 1px solid #121212; padding: 12px 16px 14px; }
+    .score-num { text-align: right; font-family: 'Bebas Neue', sans-serif; font-size: 28px; }
+    .mission { border-top: 1px solid #121212; padding: 8px 14px 10px; }
     .eyebrow { color: var(--red); letter-spacing: .1em; font-weight: 700; font-size: 12px; }
-    .headline { font-family: 'Bebas Neue', sans-serif; font-size: 34px; margin-top: 2px; }
+    .headline { font-family: 'Bebas Neue', sans-serif; font-size: 24px; margin-top: 2px; }
     .divider { height: 2px; background: var(--red); margin: 8px 0 10px; }
     .cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
-    .card { background: #101010; border: 1px solid #242424; border-radius: 10px; padding: 10px; color: var(--cream); font-size: 14px; }
+    .card { background: #101010; border: 1px solid #242424; border-radius: 10px; padding: 8px; color: var(--cream); font-size: 12px; }
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.87); z-index: 120; display: flex; align-items: center; justify-content: center; padding: 20px; }
     .overlay-panel { width: min(920px,95vw); background: #101010; border: 1px solid #222; border-radius: 14px; padding: 20px; text-align: center; }
     .winner-grid { margin-top: 16px; display: grid; grid-template-columns: repeat(2,minmax(130px,1fr)); gap: 12px; }
@@ -131,8 +131,8 @@
     let sessionActions = [];
     let hostTimer = null;
     let challengeOutcomeShown = false;
-    const preTimerDraft = { min: '0', sec: '30' };
-    const chalTimerDraft = { min: '2', sec: '0' };
+    const preTimerDraft = { min: '', sec: '' };
+    const chalTimerDraft = { min: '', sec: '' };
 
     function secToText(sec) {
       const m = Math.floor(Math.max(0, sec) / 60).toString().padStart(2, '0');
@@ -303,6 +303,11 @@
 
     function renderHost() {
       if (!(mode === 'host' || mode === 'both')) return;
+      // Preserve current timer input text across host re-renders.
+      const preMinValue = hostEl.querySelector('#preMin')?.value ?? preTimerDraft.min;
+      const preSecValue = hostEl.querySelector('#preSec')?.value ?? preTimerDraft.sec;
+      const chalMinValue = hostEl.querySelector('#chalMin')?.value ?? chalTimerDraft.min;
+      const chalSecValue = hostEl.querySelector('#chalSec')?.value ?? chalTimerDraft.sec;
       hostEl.innerHTML = `
         <div class="panel">
           <div class="row">
@@ -335,15 +340,15 @@
           <h3 class="bebas" style="font-size:30px">Timers</h3>
           <div class="row" style="margin-top:10px">
             <span>Get ready</span>
-            <input id="preMin" type="number" min="0" value="${preTimerDraft.min}" />
-            <input id="preSec" type="number" min="0" max="59" value="${preTimerDraft.sec}" />
+            <input id="preMin" type="number" min="0" value="${preMinValue}" />
+            <input id="preSec" type="number" min="0" max="59" value="${preSecValue}" />
             <button id="startPreBtn">Start pre timer</button>
             <button id="stopTimerBtn">Stop</button>
           </div>
           <div class="row" style="margin-top:10px">
             <span>Challenge</span>
-            <input id="chalMin" type="number" min="0" value="${chalTimerDraft.min}" />
-            <input id="chalSec" type="number" min="0" max="59" value="${chalTimerDraft.sec}" />
+            <input id="chalMin" type="number" min="0" value="${chalMinValue}" />
+            <input id="chalSec" type="number" min="0" max="59" value="${chalSecValue}" />
             <button id="startChalBtn">Start challenge timer</button>
           </div>
         </div>
@@ -374,28 +379,16 @@
       });
       const logout = hostEl.querySelector('#logoutAdminBtn');
       logout && logout.addEventListener('click', () => { isAdmin = false; renderHost(); });
-      const preMinInput = hostEl.querySelector('#preMin');
-      const preSecInput = hostEl.querySelector('#preSec');
-      const chalMinInput = hostEl.querySelector('#chalMin');
-      const chalSecInput = hostEl.querySelector('#chalSec');
-      preMinInput && preMinInput.addEventListener('input', () => { preTimerDraft.min = preMinInput.value; });
-      preSecInput && preSecInput.addEventListener('input', () => { preTimerDraft.sec = preSecInput.value; });
-      chalMinInput && chalMinInput.addEventListener('input', () => { chalTimerDraft.min = chalMinInput.value; });
-      chalSecInput && chalSecInput.addEventListener('input', () => { chalTimerDraft.sec = chalSecInput.value; });
       const pre = hostEl.querySelector('#startPreBtn');
       pre && pre.addEventListener('click', () => {
-        const m = Math.max(0, Number(preTimerDraft.min || 0));
-        const s = Math.min(59, Math.max(0, Number(preTimerDraft.sec || 0)));
-        preTimerDraft.min = String(m);
-        preTimerDraft.sec = String(s);
+        const m = Math.max(0, Number(hostEl.querySelector('#preMin')?.value || 0));
+        const s = Math.min(59, Math.max(0, Number(hostEl.querySelector('#preSec')?.value || 0)));
         startLocalTimer('pre', (m * 60) + s);
       });
       const chal = hostEl.querySelector('#startChalBtn');
       chal && chal.addEventListener('click', () => {
-        const m = Math.max(0, Number(chalTimerDraft.min || 0));
-        const s = Math.min(59, Math.max(0, Number(chalTimerDraft.sec || 0)));
-        chalTimerDraft.min = String(m);
-        chalTimerDraft.sec = String(s);
+        const m = Math.max(0, Number(hostEl.querySelector('#chalMin')?.value || 0));
+        const s = Math.min(59, Math.max(0, Number(hostEl.querySelector('#chalSec')?.value || 0)));
         startLocalTimer('chal', (m * 60) + s);
       });
       const stop = hostEl.querySelector('#stopTimerBtn');
@@ -453,7 +446,6 @@
         <div class="result-inner">
           <div class="result-title bebas" style="font-size:52px">🏆 WINNER</div>
           <div class="result-team" style="color:${t.color}">${t.name}</div>
-          <div class="result-points" style="font-size:28px">+3 points awarded</div>
           <button class="result-continue" id="continueBtn">Continue →</button>
         </div>
       `;
