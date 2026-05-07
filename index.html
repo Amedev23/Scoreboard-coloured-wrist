@@ -39,6 +39,7 @@
     .rt-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
     .error { color: #ff8c7a; font-size: 13px; }
     .mini { padding: 8px 10px; font-size: 13px; }
+    .undo-cta { padding: 14px 24px; font-size: 16px; background: #B7510F; border-color: #D4601A; color: #F5F0E8; }
     .danger { background: #3a120c; border-color: #6a2a1d; }
     .score-buttons { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; }
     .team-btn { height: 92px; font-size: 30px; font-family: 'Bebas Neue', sans-serif; color: var(--cream); }
@@ -59,7 +60,14 @@
     @keyframes pulse { 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.08);} }
     .scores { padding: 10px 16px; display: grid; gap: 7px; align-content: start; }
     .score-row { display: grid; grid-template-columns: 110px 1fr 64px; align-items: center; gap: 8px; height: 36px; }
+    .score-row.flash .bar-fill { animation: barFlash .4s ease; transform-origin: center; }
+    @keyframes barFlash {
+      0% { transform: scaleX(1); filter: brightness(1); }
+      40% { transform: scaleX(1.03); filter: brightness(1.6); }
+      100% { transform: scaleX(1); filter: brightness(1); }
+    }
     .team-name { font-family: 'Bebas Neue', sans-serif; font-size: 24px; }
+    .bar-wrap { position: relative; }
     .bar-track { width: 100%; height: 22px; background: #161616; border-radius: 99px; overflow: hidden; }
     .bar-fill { height: 100%; width: 0%; border-radius: 99px; transition: width 550ms cubic-bezier(0.34, 1.56, 0.64, 1); }
     .score-num { text-align: right; font-family: 'Bebas Neue', sans-serif; font-size: 28px; }
@@ -135,6 +143,13 @@
     let sessionActions = [];
     let hostTimer = null;
     let challengeOutcomeShown = false;
+    let hasReceivedState = false;
+    const scoreFxState = {
+      red: { flash: false, flashTimer: null },
+      blue: { flash: false, flashTimer: null },
+      green: { flash: false, flashTimer: null },
+      yellow: { flash: false, flashTimer: null }
+    };
     const preTimerDraft = { min: '', sec: '' };
     const chalTimerDraft = { min: '', sec: '' };
 
@@ -166,7 +181,8 @@
       return data;
     }
 
-    async function patchState(patch) {
+    async function patchState(patch, options = {}) {
+      const { optimistic = true, awaitRemote = true } = options;
       const next = { ...state, ...patch };
       ['red', 'blue', 'green', 'yellow'].forEach(k => next[k] = Math.max(0, Number(next[k] || 0)));
       if (isLocalOnly || !supabaseClient) {
@@ -178,16 +194,40 @@
         applyIncomingState(next, true);
         return next;
       }
-      const { data, error } = await supabaseClient.from('challenge_state').update(next).eq('id', 1).select('*').single();
+
+      if (optimistic) applyIncomingState(next, true);
+      const writePromise = supabaseClient.from('challenge_state').update(next).eq('id', 1).select('*').single();
+
+      if (!awaitRemote) {
+        writePromise.then(({ data, error }) => {
+          if (error) {
+            console.error('Background state sync failed:', error.message);
+            return;
+          }
+          applyIncomingState(data, true);
+        }).catch(err => console.error('Background state sync exception:', err));
+        return next;
+      }
+
+      const { data, error } = await writePromise;
       if (error) return { error: error.message };
       applyIncomingState(data, true);
       return data;
     }
 
     function applyIncomingState(nextState, fromHostWrite = false) {
+      const incoming = { ...DEFAULT_STATE, ...nextState };
+      const increasedTeams = hasReceivedState
+        ? ['red', 'blue', 'green', 'yellow'].filter(k => Number(incoming[k] || 0) > Number(state[k] || 0))
+        : [];
+
       previousState = state;
-      state = { ...DEFAULT_STATE, ...nextState };
+      state = incoming;
       renderAll();
+      if (increasedTeams.length) {
+        requestAnimationFrame(() => increasedTeams.forEach(triggerScoreFx));
+      }
+      hasReceivedState = true;
 
       if (state.timer_mode === 'chal' && Number(state.timer_secs) > 0) {
         challengeOutcomeShown = false;
@@ -198,6 +238,20 @@
         showChallengeOutcomeFromScores();
       }
       if (fromHostWrite && state.timer_mode === 'idle' && hostTimer) stopLocalTimer();
+    }
+
+    function triggerScoreFx(teamKey) {
+      const fx = scoreFxState[teamKey];
+      if (!fx) return;
+
+      fx.flash = true;
+      if (fx.flashTimer) clearTimeout(fx.flashTimer);
+      requestAnimationFrame(() => renderProjector());
+
+      fx.flashTimer = setTimeout(() => {
+        fx.flash = false;
+        renderProjector();
+      }, 400);
     }
 
     function addLog(txt) {
@@ -211,17 +265,13 @@
       if (sessionActions.length > 30) sessionActions.shift();
     }
 
-    async function awardTeam(teamKey, isManual = false) {
-      const res = await patchState({
+    function awardTeam(teamKey, isManual = false) {
+      patchState({
         [teamKey]: Number(state[teamKey] || 0) + 3,
         round: Number(state.round || 1) + 1
-      });
-      if (!res.error) {
-        addLog(`${TEAM_META[teamKey].name} +3`);
-        if (!isManual) pushSessionAction({ type: 'award', team: teamKey, delta: -3 });
-      } else {
-        alert(res.error);
-      }
+      }, { optimistic: true, awaitRemote: false });
+      addLog(`${TEAM_META[teamKey].name} +3`);
+      if (!isManual) pushSessionAction({ type: 'award', team: teamKey, delta: -3 });
     }
 
     async function adjustTeam(teamKey, delta) {
@@ -300,9 +350,10 @@
       return ['red', 'blue', 'green', 'yellow'].map(k => {
         const v = Number(state[k] || 0);
         const width = Math.max(6, (v / lead) * 100);
-        return `<div class="score-row">
+        const flashClass = scoreFxState[k]?.flash ? ' flash' : '';
+        return `<div class="score-row${flashClass}">
           <div class="team-name" style="color:${TEAM_META[k].color}">${TEAM_META[k].name}</div>
-          <div class="bar-track"><div class="bar-fill" style="width:${width}%;background:${TEAM_META[k].color}"></div></div>
+          <div class="bar-wrap"><div class="bar-track"><div class="bar-fill" style="width:${width}%;background:${TEAM_META[k].color}"></div></div></div>
           <div class="score-num">${v}</div>
         </div>`;
       }).join('');
@@ -333,7 +384,7 @@
             <button class="team-btn team-green" data-award="green">GREEN +3</button>
             <button class="team-btn team-yellow" data-award="yellow">YELLOW +3</button>
           </div>
-          <div class="row" style="margin-top:10px"><button id="undoBtn" class="mini">Undo my last</button></div>
+          <div class="row" style="margin-top:10px"><button id="undoBtn" class="mini undo-cta">Undo my last</button></div>
         </div>
         <div class="panel ${controlsHidden ? 'hidden' : ''}">
           <div class="row">
@@ -413,6 +464,7 @@
       if (!(mode === 'projector' || mode === 'both')) return;
       const m = timerModeMeta();
       const danger = state.timer_mode === 'chal' && Number(state.timer_secs) <= 10 && Number(state.timer_secs) > 0;
+      const labelColor = m.color;
       const digitColor = danger ? '#CC3318' : m.color;
       projectorEl.innerHTML = `
         <div class="projector-wrap">
@@ -427,7 +479,7 @@
             </div>
           </div>
           <div class="timer-strip">
-            <div class="mode-label" style="color:${digitColor}">${m.label}</div>
+            <div class="mode-label" style="color:${labelColor}">${m.label}</div>
             <div class="digits ${danger ? 'pulse' : ''}" style="color:${digitColor}">${secToText(state.timer_secs)}</div>
           </div>
           <div class="scores">${scoreRows()}</div>
