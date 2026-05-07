@@ -51,10 +51,9 @@
     .brand { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
     .logo { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
     .brand-eyebrow { color: #CC3318; text-transform: uppercase; letter-spacing: .1em; font-size: 12px; font-weight: 700; line-height: 1; }
-    .brand-title { font-family: 'Bebas Neue', sans-serif; font-size: 48px; color: #F5F0E8; line-height: .95; }
     .proj-badges { position: absolute; top: 8px; right: 12px; display: flex; gap: 8px; align-items: center; }
     .timer-strip { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100px; border-bottom: 1px solid #121212; }
-    .mode-label { text-transform: uppercase; letter-spacing: .08em; font-size: 12px; font-weight: 600; opacity: .7; }
+    .mode-label { font-family: 'Bebas Neue', sans-serif; text-transform: uppercase; letter-spacing: .08em; font-size: 28px; line-height: 1; }
     .digits { font-family: 'Bebas Neue', sans-serif; font-size: 72px; line-height: 1; }
     .pulse { animation: pulse .9s infinite; }
     @keyframes pulse { 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.08);} }
@@ -289,12 +288,6 @@
       return { label: 'Waiting to start', color: '#333' };
     }
 
-    function projectorHeaderTitle() {
-      if (state.timer_mode === 'pre') return 'CHALLENGE STARTING IN';
-      if (state.timer_mode === 'chal') return 'CHALLENGE IN PROGRESS';
-      return 'BALANCERS CHALLENGE';
-    }
-
     function setRealtimeStatus(label, color) {
       realtimeStatus = label;
       realtimeColor = color;
@@ -427,7 +420,6 @@
             <div class="brand">
               <img class="logo" src="https://kajabi-storefronts-production.kajabi-cdn.com/kajabi-storefronts-production/file-uploads/themes/2165402848/settings_images/516ffa-bf-0ad1-4673-8eaf2dd32e8_Untitled_design_32_.png" alt="Balancers logo" />
               <div class="brand-eyebrow">WELCOME TO BALANCERS</div>
-              <div class="brand-title">${projectorHeaderTitle()}</div>
             </div>
             <div class="proj-badges">
               <span class="badge badge-rt"><span class="rt-dot" style="background:${realtimeColor}"></span>${realtimeStatus}</span>
