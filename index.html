@@ -43,6 +43,12 @@
     .danger { background: #3a120c; border-color: #6a2a1d; }
     .score-buttons { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; }
     .team-btn { height: 92px; font-size: 30px; font-family: 'Bebas Neue', sans-serif; color: var(--cream); }
+    .team-btn.tap-feedback { animation: tapPulse .2s ease; }
+    @keyframes tapPulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(0.93); }
+      100% { transform: scale(1); }
+    }
     .team-red { background: var(--red); }
     .team-blue { background: var(--blue); }
     .team-green { background: var(--green); }
@@ -92,9 +98,42 @@
     @keyframes zoom { to { opacity: 1; transform: scale(1); } }
     .confetti { position: absolute; top: -20px; width: 10px; height: 10px; border-radius: 50%; animation: fall linear forwards; opacity: .95; }
     @keyframes fall { to { transform: translateY(110vh); opacity: .5; } }
+    .toast-wrap {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 220;
+      display: grid;
+      gap: 8px;
+      pointer-events: none;
+      width: min(92vw, 420px);
+    }
+    .toast {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 700;
+      text-align: center;
+      opacity: 0;
+      animation: toastInOut 1.5s ease forwards;
+    }
+    @keyframes toastInOut {
+      0% { opacity: 0; transform: translateY(-8px); }
+      15% { opacity: 1; transform: translateY(0); }
+      80% { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-6px); }
+    }
     @media (max-width: 860px) {
       .cards { grid-template-columns: 1fr; }
       .projector-wrap { min-height: 640px; height: auto; }
+    }
+    @media (max-width: 480px) {
+      #hostView.layout { padding: 0 16px 16px; }
+      .score-buttons { grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
+      .team-btn { width: 100%; min-width: 0; font-size: 26px; height: 82px; }
+      body { overflow-x: hidden; }
     }
   </style>
 </head>
@@ -107,6 +146,7 @@
   <section id="hostView" class="layout hidden"></section>
   <section id="projectorView" class="layout hidden"></section>
 
+  <div id="toastWrap" class="toast-wrap"></div>
   <div id="resultOverlay" class="result-screen hidden"></div>
 
   <script>
@@ -127,6 +167,7 @@
     const hostEl = document.getElementById('hostView');
     const projectorEl = document.getElementById('projectorView');
     const tabsEl = document.getElementById('tabs');
+    const toastWrap = document.getElementById('toastWrap');
     const resultOverlay = document.getElementById('resultOverlay');
     const LOCAL_STATE_KEY = 'balancers_local_state_v1';
 
@@ -258,6 +299,15 @@
       logItems.unshift(`${new Date().toLocaleTimeString()} - ${txt}`);
       logItems = logItems.slice(0, 10);
       renderHost();
+    }
+
+    function showToast(message, color) {
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.style.color = color;
+      toast.textContent = message;
+      toastWrap.appendChild(toast);
+      setTimeout(() => toast.remove(), 1600);
     }
 
     function pushSessionAction(action) {
@@ -426,7 +476,15 @@
         </div>
       `;
 
-      hostEl.querySelectorAll('[data-award]').forEach(btn => btn.addEventListener('click', () => awardTeam(btn.dataset.award)));
+      hostEl.querySelectorAll('[data-award]').forEach(btn => btn.addEventListener('click', () => {
+        const key = btn.dataset.award;
+        btn.classList.remove('tap-feedback');
+        void btn.offsetWidth;
+        btn.classList.add('tap-feedback');
+        setTimeout(() => btn.classList.remove('tap-feedback'), 220);
+        showToast(`${TEAM_META[key].name} +3`, TEAM_META[key].color);
+        awardTeam(key);
+      }));
       hostEl.querySelector('#undoBtn').addEventListener('click', undoLast);
       hostEl.querySelector('#toggleControlsBtn').addEventListener('click', () => { controlsHidden = !controlsHidden; renderHost(); });
       const pinBtn = hostEl.querySelector('#pinBtn');
@@ -488,9 +546,9 @@
             <div class="headline">WIN CHALLENGES · SCORE POINTS · MAKE YOUR COLOUR WIN</div>
             <div class="divider"></div>
             <div class="cards">
-              <div class="card"><div class="card-step">1</div>Team up with <strong>any 2 people</strong> wearing the <strong>same wristband colour</strong> as you</div>
-              <div class="card"><div class="card-step">2</div>Head to a <strong>challenge station</strong> — look for the balloons — where you'll face a <strong>team of a different colour</strong></div>
-              <div class="card"><div class="card-step">3</div>Win the face-off and your colour earns <strong>+3 points</strong> on the board</div>
+              <div class="card"><div class="card-step">1</div>Find any 2 people with the same wristband colour and team up. Mix with someone new every round!</div>
+              <div class="card"><div class="card-step">2</div>Head to a challenge station and look for the balloons. You'll face a team of a different colour.</div>
+              <div class="card"><div class="card-step">3</div>Win the face-off and earn +3 points for your colour. Then mix up and go again!</div>
             </div>
           </div>
         </div>
