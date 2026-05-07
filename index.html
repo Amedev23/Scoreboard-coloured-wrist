@@ -35,6 +35,8 @@
     .spacer { flex: 1; }
     .badge { border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 600; }
     .badge-admin { background: #3d1f16; border: 1px solid #6a2b1d; color: #f7c9bf; }
+    .badge-rt { background: #131313; border: 1px solid #2a2a2a; color: #d1d1d1; display: inline-flex; align-items: center; gap: 6px; }
+    .rt-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
     .error { color: #ff8c7a; font-size: 13px; }
     .mini { padding: 8px 10px; font-size: 13px; }
     .danger { background: #3a120c; border-color: #6a2a1d; }
@@ -93,7 +95,6 @@
   <section id="hostView" class="layout hidden"></section>
   <section id="projectorView" class="layout hidden"></section>
 
-  <div id="pickerOverlay" class="overlay hidden"></div>
   <div id="resultOverlay" class="result-screen hidden"></div>
 
   <script>
@@ -114,8 +115,8 @@
     const hostEl = document.getElementById('hostView');
     const projectorEl = document.getElementById('projectorView');
     const tabsEl = document.getElementById('tabs');
-    const pickerOverlay = document.getElementById('pickerOverlay');
     const resultOverlay = document.getElementById('resultOverlay');
+    const LOCAL_STATE_KEY = 'balancers_local_state_v1';
 
     let supabaseClient = null;
     let isLocalOnly = false;
@@ -123,10 +124,15 @@
     let previousState = null;
     let isAdmin = false;
     let controlsHidden = false;
+    let realtimeStatus = isLocalOnly ? 'Local-only mode' : 'Realtime: connecting';
+    let realtimeColor = '#F6AD55';
+    let realtimeChannel = null;
     let logItems = [];
     let sessionActions = [];
     let hostTimer = null;
-    let zeroHandled = false;
+    let challengeOutcomeShown = false;
+    const preTimerDraft = { min: '0', sec: '30' };
+    const chalTimerDraft = { min: '2', sec: '0' };
 
     function secToText(sec) {
       const m = Math.floor(Math.max(0, sec) / 60).toString().padStart(2, '0');
@@ -160,6 +166,11 @@
       const next = { ...state, ...patch };
       ['red', 'blue', 'green', 'yellow'].forEach(k => next[k] = Math.max(0, Number(next[k] || 0)));
       if (isLocalOnly || !supabaseClient) {
+        try {
+          localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(next));
+        } catch (err) {
+          console.warn('Could not persist local state:', err);
+        }
         applyIncomingState(next, true);
         return next;
       }
@@ -174,12 +185,14 @@
       state = { ...DEFAULT_STATE, ...nextState };
       renderAll();
 
-      const justHitZero = state.timer_mode === 'chal' && Number(state.timer_secs) === 0 && previousState && Number(previousState.timer_secs) > 0;
-      if (justHitZero && !zeroHandled) {
-        zeroHandled = true;
-        showWinnerPicker();
+      if (state.timer_mode === 'chal' && Number(state.timer_secs) > 0) {
+        challengeOutcomeShown = false;
       }
-      if (state.timer_secs > 0 || state.timer_mode !== 'chal') zeroHandled = false;
+      const justEndedChallenge = previousState && previousState.timer_mode === 'chal' && state.timer_mode === 'idle';
+      if (justEndedChallenge && !challengeOutcomeShown) {
+        challengeOutcomeShown = true;
+        showChallengeOutcomeFromScores();
+      }
       if (fromHostWrite && state.timer_mode === 'idle' && hostTimer) stopLocalTimer();
     }
 
@@ -223,6 +236,31 @@
       hostTimer = null;
     }
 
+    function getLeadingTeamKey() {
+      const teamKeys = ['red', 'blue', 'green', 'yellow'];
+      const scores = teamKeys.map(k => Number(state[k] || 0));
+      const top = Math.max(...scores);
+      const leaders = teamKeys.filter(k => Number(state[k] || 0) === top);
+      return leaders.length === 1 ? leaders[0] : null;
+    }
+
+    function showChallengeOutcomeFromScores() {
+      const winner = getLeadingTeamKey();
+      if (!winner) {
+        showTieResult();
+        return;
+      }
+      showWinnerResult(winner);
+    }
+
+    async function resolveChallengeOutcome() {
+      const res = await patchState({ timer_mode: 'idle', timer_secs: 0 });
+      if (res.error) { alert(res.error); return; }
+      const winner = getLeadingTeamKey();
+      if (!winner) addLog('Challenge ended - tie');
+      else addLog(`Challenge ended - leader: ${TEAM_META[winner].name}`);
+    }
+
     function startLocalTimer(modeName, secs) {
       stopLocalTimer();
       const target = Math.max(0, Number(secs || 0));
@@ -232,7 +270,7 @@
         await patchState({ timer_mode: modeName, timer_secs: next });
         if (next <= 0) {
           stopLocalTimer();
-          if (modeName === 'chal') showWinnerPicker();
+          if (modeName === 'chal') await resolveChallengeOutcome();
         }
       }, 1000);
     }
@@ -241,6 +279,12 @@
       if (state.timer_mode === 'pre') return { label: 'Challenge starting in', color: '#F6AD55' };
       if (state.timer_mode === 'chal') return { label: 'Challenge in progress', color: '#68D391' };
       return { label: 'Waiting to start', color: '#2a2a2a' };
+    }
+
+    function setRealtimeStatus(label, color) {
+      realtimeStatus = label;
+      realtimeColor = color;
+      renderAll();
     }
 
     function scoreRows() {
@@ -264,6 +308,7 @@
           <div class="row">
             <h2 class="bebas" style="font-size:38px">Host Controls</h2>
             <div class="spacer"></div>
+            <span class="badge badge-rt"><span class="rt-dot" style="background:${realtimeColor}"></span>${realtimeStatus}</span>
             ${isAdmin ? '<span class="badge badge-admin">Admin</span>' : ''}
             <button id="toggleControlsBtn" class="mini">${controlsHidden ? 'Show controls' : 'Hide controls'}</button>
           </div>
@@ -290,15 +335,15 @@
           <h3 class="bebas" style="font-size:30px">Timers</h3>
           <div class="row" style="margin-top:10px">
             <span>Get ready</span>
-            <input id="preMin" type="number" min="0" value="0" />
-            <input id="preSec" type="number" min="0" max="59" value="30" />
+            <input id="preMin" type="number" min="0" value="${preTimerDraft.min}" />
+            <input id="preSec" type="number" min="0" max="59" value="${preTimerDraft.sec}" />
             <button id="startPreBtn">Start pre timer</button>
             <button id="stopTimerBtn">Stop</button>
           </div>
           <div class="row" style="margin-top:10px">
             <span>Challenge</span>
-            <input id="chalMin" type="number" min="0" value="2" />
-            <input id="chalSec" type="number" min="0" max="59" value="0" />
+            <input id="chalMin" type="number" min="0" value="${chalTimerDraft.min}" />
+            <input id="chalSec" type="number" min="0" max="59" value="${chalTimerDraft.sec}" />
             <button id="startChalBtn">Start challenge timer</button>
           </div>
         </div>
@@ -313,7 +358,7 @@
           <div class="row" style="margin-top:8px"><button id="resetAllBtn" class="mini danger">Reset all scores</button></div>
         </div>
         <div class="panel">
-          <h3 class="bebas" style="font-size:30px">Challenge log (session)</h3>
+          <h3 class="bebas" style="font-size:30px">My actions this session</h3>
           <ol style="margin:0;padding-left:16px">${logItems.map(l => `<li>${l}</li>`).join('') || '<li>No results yet</li>'}</ol>
         </div>
       `;
@@ -329,17 +374,29 @@
       });
       const logout = hostEl.querySelector('#logoutAdminBtn');
       logout && logout.addEventListener('click', () => { isAdmin = false; renderHost(); });
+      const preMinInput = hostEl.querySelector('#preMin');
+      const preSecInput = hostEl.querySelector('#preSec');
+      const chalMinInput = hostEl.querySelector('#chalMin');
+      const chalSecInput = hostEl.querySelector('#chalSec');
+      preMinInput && preMinInput.addEventListener('input', () => { preTimerDraft.min = preMinInput.value; });
+      preSecInput && preSecInput.addEventListener('input', () => { preTimerDraft.sec = preSecInput.value; });
+      chalMinInput && chalMinInput.addEventListener('input', () => { chalTimerDraft.min = chalMinInput.value; });
+      chalSecInput && chalSecInput.addEventListener('input', () => { chalTimerDraft.sec = chalSecInput.value; });
       const pre = hostEl.querySelector('#startPreBtn');
       pre && pre.addEventListener('click', () => {
-        const m = Number(hostEl.querySelector('#preMin').value || 0);
-        const s = Number(hostEl.querySelector('#preSec').value || 0);
-        startLocalTimer('pre', m * 60 + s);
+        const m = Math.max(0, Number(preTimerDraft.min || 0));
+        const s = Math.min(59, Math.max(0, Number(preTimerDraft.sec || 0)));
+        preTimerDraft.min = String(m);
+        preTimerDraft.sec = String(s);
+        startLocalTimer('pre', (m * 60) + s);
       });
       const chal = hostEl.querySelector('#startChalBtn');
       chal && chal.addEventListener('click', () => {
-        const m = Number(hostEl.querySelector('#chalMin').value || 0);
-        const s = Number(hostEl.querySelector('#chalSec').value || 0);
-        startLocalTimer('chal', m * 60 + s);
+        const m = Math.max(0, Number(chalTimerDraft.min || 0));
+        const s = Math.min(59, Math.max(0, Number(chalTimerDraft.sec || 0)));
+        chalTimerDraft.min = String(m);
+        chalTimerDraft.sec = String(s);
+        startLocalTimer('chal', (m * 60) + s);
       });
       const stop = hostEl.querySelector('#stopTimerBtn');
       stop && stop.addEventListener('click', async () => { stopLocalTimer(); await patchState({ timer_mode: 'idle', timer_secs: 0 }); });
@@ -364,7 +421,10 @@
               <img class="logo" src="https://kajabi-storefronts-production.kajabi-cdn.com/kajabi-storefronts-production/file-uploads/themes/2165402848/settings_images/516ffa-bf-0ad1-4673-8eaf2dd32e8_Untitled_design_32_.png" alt="Balancers logo" />
               <h2 class="bebas" style="font-size:32px">BALANCERS CHALLENGE</h2>
             </div>
-            <div style="color:#888;font-weight:600">Round ${state.round}</div>
+            <div class="row" style="gap:8px">
+              <span class="badge badge-rt"><span class="rt-dot" style="background:${realtimeColor}"></span>${realtimeStatus}</span>
+              <div style="color:#888;font-weight:600">Round ${state.round}</div>
+            </div>
           </div>
           <div class="timer-strip">
             <div class="mode-label" style="color:${m.color}">${m.label}</div>
@@ -383,37 +443,6 @@
           </div>
         </div>
       `;
-    }
-
-    function showWinnerPicker() {
-      pickerOverlay.classList.remove('hidden');
-      pickerOverlay.innerHTML = `
-        <div class="overlay-panel">
-          <h2 class="bebas" style="font-size:54px">CHALLENGE OVER - WHO WON?</h2>
-          <div class="winner-grid">
-            <button class="team-btn team-red" data-winner="red">RED</button>
-            <button class="team-btn team-blue" data-winner="blue">BLUE</button>
-            <button class="team-btn team-green" data-winner="green">GREEN</button>
-            <button class="team-btn team-yellow" data-winner="yellow">YELLOW</button>
-          </div>
-          <button id="dismissPickerBtn" class="mini" style="margin-top:12px">Dismiss (no result)</button>
-        </div>
-      `;
-      pickerOverlay.querySelectorAll('[data-winner]').forEach(btn => btn.addEventListener('click', () => declareWinner(btn.dataset.winner)));
-      pickerOverlay.querySelector('#dismissPickerBtn').addEventListener('click', async () => {
-        pickerOverlay.classList.add('hidden');
-        await patchState({ timer_mode: 'idle', timer_secs: 0 });
-      });
-    }
-
-    async function declareWinner(teamKey) {
-      pickerOverlay.classList.add('hidden');
-      stopLocalTimer();
-      const patch = { [teamKey]: Number(state[teamKey] || 0) + 3, round: Number(state.round || 1) + 1, timer_mode: 'idle', timer_secs: 0 };
-      const res = await patchState(patch);
-      if (res.error) { alert(res.error); return; }
-      addLog(`Winner: ${TEAM_META[teamKey].name} (+3)`);
-      showWinnerResult(teamKey);
     }
 
     function showWinnerResult(teamKey) {
@@ -443,7 +472,45 @@
       });
     }
 
+    function showTieResult() {
+      resultOverlay.classList.remove('hidden');
+      resultOverlay.style.background = 'linear-gradient(180deg, rgba(245,240,232,.16) 0%, rgba(0,0,0,.95) 50%)';
+      resultOverlay.innerHTML = `
+        <div class="result-inner">
+          <div class="result-title bebas" style="font-size:52px">CHALLENGE OVER</div>
+          <div class="result-team" style="color:#F5F0E8">IT'S A TIE!</div>
+          <div class="result-points" style="font-size:28px">No winner this round</div>
+          <button class="result-continue" id="continueBtn">Continue →</button>
+        </div>
+      `;
+      for (let i = 0; i < 55; i += 1) {
+        const dot = document.createElement('span');
+        dot.className = 'confetti';
+        dot.style.left = `${Math.random() * 100}%`;
+        dot.style.background = '#F5F0E8';
+        dot.style.animationDuration = `${2 + Math.random() * 2.2}s`;
+        dot.style.animationDelay = `${Math.random() * .5}s`;
+        resultOverlay.appendChild(dot);
+      }
+      resultOverlay.querySelector('#continueBtn').addEventListener('click', () => {
+        resultOverlay.classList.add('hidden');
+        resultOverlay.innerHTML = '';
+      });
+    }
+
     function renderAll() { renderHost(); renderProjector(); }
+
+    function setupLocalStateSync() {
+      window.addEventListener('storage', event => {
+        if (event.key !== LOCAL_STATE_KEY || !event.newValue) return;
+        try {
+          const incoming = JSON.parse(event.newValue);
+          applyIncomingState(incoming);
+        } catch (err) {
+          console.warn('Could not parse local synced state:', err);
+        }
+      });
+    }
 
     function setupTabs() {
       if (mode !== 'both') return;
@@ -465,16 +532,27 @@
         try {
           supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
           applyIncomingState(await ensureRow());
+          setRealtimeStatus('Realtime: connecting', '#F6AD55');
         } catch (err) {
           console.error('Supabase startup failed, falling back to local-only mode:', err);
           isLocalOnly = true;
           supabaseClient = null;
           applyIncomingState({ ...DEFAULT_STATE });
+          setRealtimeStatus('Local-only mode', '#A0AEC0');
         }
       } else {
         if (!hasSdk) console.warn('Supabase SDK missing. Running local-only mode.');
         else console.warn('Supabase credentials are placeholders. Running local-only mode.');
-        applyIncomingState({ ...DEFAULT_STATE });
+        let localState = { ...DEFAULT_STATE };
+        try {
+          const saved = localStorage.getItem(LOCAL_STATE_KEY);
+          if (saved) localState = { ...localState, ...JSON.parse(saved) };
+        } catch (err) {
+          console.warn('Could not read local saved state:', err);
+        }
+        applyIncomingState(localState);
+        setupLocalStateSync();
+        setRealtimeStatus('Local-only mode', '#A0AEC0');
       }
 
       if (mode === 'host') hostEl.classList.remove('hidden');
@@ -482,12 +560,24 @@
       if (mode === 'both') setupTabs();
       renderAll();
       if (!isLocalOnly && supabaseClient) {
-        supabaseClient.channel('challenge_state_row').on('postgres_changes', {
+        if (realtimeChannel) supabaseClient.removeChannel(realtimeChannel);
+        realtimeChannel = supabaseClient.channel('challenge_state_row')
+        .on('postgres_changes', {
           event: 'UPDATE',
           schema: 'public',
           table: 'challenge_state',
           filter: 'id=eq.1'
-        }, payload => applyIncomingState(payload.new)).subscribe();
+        }, payload => {
+          setRealtimeStatus('Realtime: connected', '#68D391');
+          // Force full host/projector re-render on every incoming row update.
+          applyIncomingState(payload.new);
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') setRealtimeStatus('Realtime: connected', '#68D391');
+          else if (status === 'CHANNEL_ERROR') setRealtimeStatus('Realtime: error', '#FC8181');
+          else if (status === 'TIMED_OUT') setRealtimeStatus('Realtime: timed out', '#F6AD55');
+          else if (status === 'CLOSED') setRealtimeStatus('Realtime: disconnected', '#A0AEC0');
+        });
       }
     }
 
