@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Balancers Challenge</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg: #0D0D0D;
+      --red: #CC3318;
+      --cream: #F5F0E8;
+      --card: #111;
+      --card2: #1a1a1a;
+      --border: #222;
+      --blue: #2B6CB0;
+      --green: #276749;
+      --yellow: #B7791F;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--cream); font-family: 'DM Sans', sans-serif; }
+    .bebas, h1, h2, h3 { font-family: 'Bebas Neue', sans-serif; letter-spacing: .04em; margin: 0; }
+    .hidden { display: none !important; }
+    button { cursor: pointer; color: var(--cream); border: 1px solid #2a2a2a; background: #1a1a1a; border-radius: 10px; padding: 10px 14px; font-weight: 600; }
+    button:hover { filter: brightness(1.08); }
+    input[type="number"], input[type="password"] { background: #111; color: var(--cream); border: 1px solid #333; border-radius: 8px; padding: 8px; width: 92px; }
+    input[type="password"] { width: 120px; }
+    .tabs { display: flex; gap: 10px; padding: 14px; border-bottom: 1px solid #1e1e1e; position: sticky; top: 0; background: #0b0b0b; z-index: 20; }
+    .layout { max-width: 1180px; margin: 0 auto; padding: 16px; }
+    .panel { background: #111; border: 1px solid #222; border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .spacer { flex: 1; }
+    .badge { border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 600; }
+    .badge-admin { background: #3d1f16; border: 1px solid #6a2b1d; color: #f7c9bf; }
+    .error { color: #ff8c7a; font-size: 13px; }
+    .mini { padding: 8px 10px; font-size: 13px; }
+    .danger { background: #3a120c; border-color: #6a2a1d; }
+    .score-buttons { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; }
+    .team-btn { height: 92px; font-size: 30px; font-family: 'Bebas Neue', sans-serif; color: var(--cream); }
+    .team-red { background: var(--red); }
+    .team-blue { background: var(--blue); }
+    .team-green { background: var(--green); }
+    .team-yellow { background: var(--yellow); }
+    .projector-wrap { max-width: 1365px; margin: 0 auto; width: 100%; height: 640px; background: #000; border: 1px solid #171717; display: grid; grid-template-rows: 52px 76px 1fr auto; overflow: hidden; position: relative; }
+    .proj-header { display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid #121212; }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .logo { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
+    .timer-strip { display: flex; justify-content: space-between; align-items: center; padding: 0 18px; border-bottom: 1px solid #121212; }
+    .mode-label { text-transform: uppercase; letter-spacing: .08em; font-size: 14px; font-weight: 600; }
+    .digits { font-family: 'Bebas Neue', sans-serif; font-size: 58px; line-height: 1; }
+    .pulse { animation: pulse .9s infinite; }
+    @keyframes pulse { 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.08);} }
+    .scores { padding: 14px 18px; display: grid; gap: 10px; align-content: start; }
+    .score-row { display: grid; grid-template-columns: 120px 1fr 72px; align-items: center; gap: 10px; height: 44px; }
+    .team-name { font-family: 'Bebas Neue', sans-serif; font-size: 30px; }
+    .bar-track { width: 100%; height: 26px; background: #161616; border-radius: 99px; overflow: hidden; }
+    .bar-fill { height: 100%; width: 0%; border-radius: 99px; transition: width 550ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+    .score-num { text-align: right; font-family: 'Bebas Neue', sans-serif; font-size: 34px; }
+    .mission { border-top: 1px solid #121212; padding: 12px 16px 14px; }
+    .eyebrow { color: var(--red); letter-spacing: .1em; font-weight: 700; font-size: 12px; }
+    .headline { font-family: 'Bebas Neue', sans-serif; font-size: 34px; margin-top: 2px; }
+    .divider { height: 2px; background: var(--red); margin: 8px 0 10px; }
+    .cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+    .card { background: #101010; border: 1px solid #242424; border-radius: 10px; padding: 10px; color: var(--cream); font-size: 14px; }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.87); z-index: 120; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .overlay-panel { width: min(920px,95vw); background: #101010; border: 1px solid #222; border-radius: 14px; padding: 20px; text-align: center; }
+    .winner-grid { margin-top: 16px; display: grid; grid-template-columns: repeat(2,minmax(130px,1fr)); gap: 12px; }
+    .result-screen { position: fixed; inset: 0; z-index: 130; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .result-inner { text-align: center; position: relative; z-index: 2; }
+    .result-title { opacity: 0; transform: translateY(14px); animation: up .5s ease forwards; }
+    .result-team { font-family: 'Bebas Neue', sans-serif; font-size: 100px; transform: scale(.7); opacity: 0; animation: zoom .6s .18s ease forwards; }
+    .result-points { opacity: 0; animation: up .45s .35s ease forwards; }
+    .result-continue { opacity: 0; margin-top: 22px; animation: up .45s .8s ease forwards; }
+    @keyframes up { to { opacity: 1; transform: translateY(0); } }
+    @keyframes zoom { to { opacity: 1; transform: scale(1); } }
+    .confetti { position: absolute; top: -20px; width: 10px; height: 10px; border-radius: 50%; animation: fall linear forwards; opacity: .95; }
+    @keyframes fall { to { transform: translateY(110vh); opacity: .5; } }
+    @media (max-width: 860px) {
+      .cards { grid-template-columns: 1fr; }
+      .projector-wrap { min-height: 640px; height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div id="tabs" class="tabs hidden">
+    <button class="tab-btn" data-tab="host">Host</button>
+    <button class="tab-btn" data-tab="projector">Projector</button>
+  </div>
+
+  <section id="hostView" class="layout hidden"></section>
+  <section id="projectorView" class="layout hidden"></section>
+
+  <div id="pickerOverlay" class="overlay hidden"></div>
+  <div id="resultOverlay" class="result-screen hidden"></div>
+
+  <script>
+    const SUPABASE_URL = 'https://xdkynulvepdpejaddpmk.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhka3ludWx2ZXBkcGVqYWRkcG1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxNDAxOTYsImV4cCI6MjA5MzcxNjE5Nn0.cbwjhUvZ_nyeoEXPWtWG4ye4W5-Mo_aaxu_LmXO6ijE';
+    const ADMIN_PIN = '1234'; // change before event
+
+    const TEAM_META = {
+      red: { name: 'RED', color: '#CC3318' },
+      blue: { name: 'BLUE', color: '#2B6CB0' },
+      green: { name: 'GREEN', color: '#276749' },
+      yellow: { name: 'YELLOW', color: '#B7791F' }
+    };
+    const DEFAULT_STATE = { id: 1, red: 0, blue: 0, green: 0, yellow: 0, round: 1, timer_mode: 'idle', timer_secs: 0 };
+
+    const modeParam = new URLSearchParams(location.search).get('mode');
+    const mode = modeParam === 'host' || modeParam === 'projector' ? modeParam : 'both';
+    const hostEl = document.getElementById('hostView');
+    const projectorEl = document.getElementById('projectorView');
+    const tabsEl = document.getElementById('tabs');
+    const pickerOverlay = document.getElementById('pickerOverlay');
+    const resultOverlay = document.getElementById('resultOverlay');
+
+    let supabase = null;
+    let state = { ...DEFAULT_STATE };
+    let previousState = null;
+    let isAdmin = false;
+    let controlsHidden = false;
+    let logItems = [];
+    let sessionActions = [];
+    let hostTimer = null;
+    let zeroHandled = false;
+
+    function secToText(sec) {
+      const m = Math.floor(Math.max(0, sec) / 60).toString().padStart(2, '0');
+      const s = (Math.max(0, sec) % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    async function ensureRow() {
+      const { data, error } = await supabase.from('challenge_state').select('*').eq('id', 1).maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        const { data: ins, error: insErr } = await supabase.from('challenge_state').insert(DEFAULT_STATE).select('*').single();
+        if (insErr) throw insErr;
+        return ins;
+      }
+      return data;
+    }
+
+    async function patchState(patch) {
+      const next = { ...state, ...patch };
+      ['red', 'blue', 'green', 'yellow'].forEach(k => next[k] = Math.max(0, Number(next[k] || 0)));
+      const { data, error } = await supabase.from('challenge_state').update(next).eq('id', 1).select('*').single();
+      if (error) return { error: error.message };
+      applyIncomingState(data, true);
+      return data;
+    }
+
+    function applyIncomingState(nextState, fromHostWrite = false) {
+      previousState = state;
+      state = { ...DEFAULT_STATE, ...nextState };
+      renderAll();
+
+      const justHitZero = state.timer_mode === 'chal' && Number(state.timer_secs) === 0 && previousState && Number(previousState.timer_secs) > 0;
+      if (justHitZero && !zeroHandled) {
+        zeroHandled = true;
+        showWinnerPicker();
+      }
+      if (state.timer_secs > 0 || state.timer_mode !== 'chal') zeroHandled = false;
+      if (fromHostWrite && state.timer_mode === 'idle' && hostTimer) stopLocalTimer();
+    }
+
+    function addLog(txt) {
+      logItems.unshift(`${new Date().toLocaleTimeString()} - ${txt}`);
+      logItems = logItems.slice(0, 10);
+      renderHost();
+    }
+
+    function pushSessionAction(action) {
+      sessionActions.push(action);
+      if (sessionActions.length > 30) sessionActions.shift();
+    }
+
+    async function awardTeam(teamKey, isManual = false) {
+      const res = await patchState({ [teamKey]: Number(state[teamKey] || 0) + 3 });
+      if (!res.error) {
+        addLog(`${TEAM_META[teamKey].name} +3`);
+        if (!isManual) pushSessionAction({ type: 'award', team: teamKey, delta: -3 });
+      } else {
+        alert(res.error);
+      }
+    }
+
+    async function adjustTeam(teamKey, delta) {
+      const res = await patchState({ [teamKey]: Math.max(0, Number(state[teamKey] || 0) + delta) });
+      if (!res.error) addLog(`${TEAM_META[teamKey].name} ${delta > 0 ? '+' : ''}${delta}`);
+    }
+
+    async function undoLast() {
+      const last = sessionActions.pop();
+      if (!last) return;
+      if (last.type === 'award') {
+        await adjustTeam(last.team, last.delta);
+        addLog(`Undo: ${TEAM_META[last.team].name} ${last.delta}`);
+      }
+    }
+
+    function stopLocalTimer() {
+      if (hostTimer) clearInterval(hostTimer);
+      hostTimer = null;
+    }
+
+    function startLocalTimer(modeName, secs) {
+      stopLocalTimer();
+      const target = Math.max(0, Number(secs || 0));
+      patchState({ timer_mode: modeName, timer_secs: target });
+      hostTimer = setInterval(async () => {
+        const next = Math.max(0, Number(state.timer_secs) - 1);
+        await patchState({ timer_mode: modeName, timer_secs: next });
+        if (next <= 0) {
+          stopLocalTimer();
+          if (modeName === 'chal') showWinnerPicker();
+        }
+      }, 1000);
+    }
+
+    function timerModeMeta() {
+      if (state.timer_mode === 'pre') return { label: 'Challenge starting in', color: '#F6AD55' };
+      if (state.timer_mode === 'chal') return { label: 'Challenge in progress', color: '#68D391' };
+      return { label: 'Waiting to start', color: '#2a2a2a' };
+    }
+
+    function scoreRows() {
+      const vals = ['red', 'blue', 'green', 'yellow'].map(k => Number(state[k] || 0));
+      const lead = Math.max(1, ...vals);
+      return ['red', 'blue', 'green', 'yellow'].map(k => {
+        const v = Number(state[k] || 0);
+        const width = Math.max(6, (v / lead) * 100);
+        return `<div class="score-row">
+          <div class="team-name" style="color:${TEAM_META[k].color}">${TEAM_META[k].name}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${width}%;background:${TEAM_META[k].color}"></div></div>
+          <div class="score-num">${v}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderHost() {
+      if (!(mode === 'host' || mode === 'both')) return;
+      hostEl.innerHTML = `
+        <div class="panel">
+          <div class="row">
+            <h2 class="bebas" style="font-size:38px">Host Controls</h2>
+            <div class="spacer"></div>
+            ${isAdmin ? '<span class="badge badge-admin">Admin</span>' : ''}
+            <button id="toggleControlsBtn" class="mini">${controlsHidden ? 'Show controls' : 'Hide controls'}</button>
+          </div>
+          <p style="margin:6px 0 0;color:#bcbcbc">Round ${state.round} · Timer ${secToText(state.timer_secs)} (${state.timer_mode})</p>
+        </div>
+        <div class="panel">
+          <div class="score-buttons">
+            <button class="team-btn team-red" data-award="red">RED +3</button>
+            <button class="team-btn team-blue" data-award="blue">BLUE +3</button>
+            <button class="team-btn team-green" data-award="green">GREEN +3</button>
+            <button class="team-btn team-yellow" data-award="yellow">YELLOW +3</button>
+          </div>
+          <div class="row" style="margin-top:10px"><button id="undoBtn" class="mini">Undo my last</button></div>
+        </div>
+        <div class="panel ${controlsHidden ? 'hidden' : ''}">
+          <div class="row">
+            <input id="pinInput" type="password" maxlength="4" placeholder="Admin PIN" />
+            <button id="pinBtn" class="mini">Unlock Admin</button>
+            ${isAdmin ? '<button id="logoutAdminBtn" class="mini">Logout admin</button>' : ''}
+            <span id="pinError" class="error"></span>
+          </div>
+        </div>
+        <div class="panel ${controlsHidden || !isAdmin ? 'hidden' : ''}">
+          <h3 class="bebas" style="font-size:30px">Timers</h3>
+          <div class="row" style="margin-top:10px">
+            <span>Get ready</span>
+            <input id="preMin" type="number" min="0" value="0" />
+            <input id="preSec" type="number" min="0" max="59" value="30" />
+            <button id="startPreBtn">Start pre timer</button>
+            <button id="stopTimerBtn">Stop</button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <span>Challenge</span>
+            <input id="chalMin" type="number" min="0" value="2" />
+            <input id="chalSec" type="number" min="0" max="59" value="0" />
+            <button id="startChalBtn">Start challenge timer</button>
+          </div>
+        </div>
+        <div class="panel ${controlsHidden || !isAdmin ? 'hidden' : ''}">
+          <h3 class="bebas" style="font-size:30px">Manual score adjustment</h3>
+          ${['red','blue','green','yellow'].map(k => `<div class="row" style="margin:8px 0">
+            <div style="width:90px;color:${TEAM_META[k].color};font-weight:600">${TEAM_META[k].name}</div>
+            <button class="mini" data-adjust="${k}" data-delta="3">+3</button>
+            <button class="mini" data-adjust="${k}" data-delta="-3">-3</button>
+            <div>Current: <b>${state[k]}</b></div>
+          </div>`).join('')}
+          <div class="row" style="margin-top:8px"><button id="resetAllBtn" class="mini danger">Reset all scores</button></div>
+        </div>
+        <div class="panel">
+          <h3 class="bebas" style="font-size:30px">Challenge log (session)</h3>
+          <ol style="margin:0;padding-left:16px">${logItems.map(l => `<li>${l}</li>`).join('') || '<li>No results yet</li>'}</ol>
+        </div>
+      `;
+
+      hostEl.querySelectorAll('[data-award]').forEach(btn => btn.addEventListener('click', () => awardTeam(btn.dataset.award)));
+      hostEl.querySelector('#undoBtn').addEventListener('click', undoLast);
+      hostEl.querySelector('#toggleControlsBtn').addEventListener('click', () => { controlsHidden = !controlsHidden; renderHost(); });
+      const pinBtn = hostEl.querySelector('#pinBtn');
+      pinBtn && pinBtn.addEventListener('click', () => {
+        const pin = hostEl.querySelector('#pinInput').value;
+        const err = hostEl.querySelector('#pinError');
+        if (pin === ADMIN_PIN) { isAdmin = true; err.textContent = ''; renderHost(); } else { err.textContent = 'Wrong PIN'; }
+      });
+      const logout = hostEl.querySelector('#logoutAdminBtn');
+      logout && logout.addEventListener('click', () => { isAdmin = false; renderHost(); });
+      const pre = hostEl.querySelector('#startPreBtn');
+      pre && pre.addEventListener('click', () => {
+        const m = Number(hostEl.querySelector('#preMin').value || 0);
+        const s = Number(hostEl.querySelector('#preSec').value || 0);
+        startLocalTimer('pre', m * 60 + s);
+      });
+      const chal = hostEl.querySelector('#startChalBtn');
+      chal && chal.addEventListener('click', () => {
+        const m = Number(hostEl.querySelector('#chalMin').value || 0);
+        const s = Number(hostEl.querySelector('#chalSec').value || 0);
+        startLocalTimer('chal', m * 60 + s);
+      });
+      const stop = hostEl.querySelector('#stopTimerBtn');
+      stop && stop.addEventListener('click', async () => { stopLocalTimer(); await patchState({ timer_mode: 'idle', timer_secs: 0 }); });
+      hostEl.querySelectorAll('[data-adjust]').forEach(btn => btn.addEventListener('click', () => adjustTeam(btn.dataset.adjust, Number(btn.dataset.delta))));
+      const reset = hostEl.querySelector('#resetAllBtn');
+      reset && reset.addEventListener('click', async () => {
+        if (!confirm('Reset all scores to 0?')) return;
+        await patchState({ red: 0, blue: 0, green: 0, yellow: 0, round: 1, timer_mode: 'idle', timer_secs: 0 });
+        addLog('All scores reset');
+      });
+    }
+
+    function renderProjector() {
+      if (!(mode === 'projector' || mode === 'both')) return;
+      const m = timerModeMeta();
+      const danger = Number(state.timer_secs) <= 10 && Number(state.timer_secs) > 0;
+      const digitColor = danger ? '#CC3318' : m.color;
+      projectorEl.innerHTML = `
+        <div class="projector-wrap">
+          <div class="proj-header">
+            <div class="brand">
+              <img class="logo" src="https://kajabi-storefronts-production.kajabi-cdn.com/kajabi-storefronts-production/file-uploads/themes/2165402848/settings_images/516ffa-bf-0ad1-4673-8eaf2dd32e8_Untitled_design_32_.png" alt="Balancers logo" />
+              <h2 class="bebas" style="font-size:32px">BALANCERS CHALLENGE</h2>
+            </div>
+            <div style="color:#888;font-weight:600">Round ${state.round}</div>
+          </div>
+          <div class="timer-strip">
+            <div class="mode-label" style="color:${m.color}">${m.label}</div>
+            <div class="digits ${danger ? 'pulse' : ''}" style="color:${digitColor}">${secToText(state.timer_secs)}</div>
+          </div>
+          <div class="scores">${scoreRows()}</div>
+          <div class="mission">
+            <div class="eyebrow">YOUR MISSION TONIGHT</div>
+            <div class="headline">WIN CHALLENGES · SCORE POINTS · MAKE YOUR COLOUR WIN</div>
+            <div class="divider"></div>
+            <div class="cards">
+              <div class="card">Mix up and team with any 2 people wearing your wristband colour</div>
+              <div class="card">Find a group of 3 with a different colour and challenge them</div>
+              <div class="card">Win the face-off and your colour earns +3 points on the board</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function showWinnerPicker() {
+      pickerOverlay.classList.remove('hidden');
+      pickerOverlay.innerHTML = `
+        <div class="overlay-panel">
+          <h2 class="bebas" style="font-size:54px">CHALLENGE OVER - WHO WON?</h2>
+          <div class="winner-grid">
+            <button class="team-btn team-red" data-winner="red">RED</button>
+            <button class="team-btn team-blue" data-winner="blue">BLUE</button>
+            <button class="team-btn team-green" data-winner="green">GREEN</button>
+            <button class="team-btn team-yellow" data-winner="yellow">YELLOW</button>
+          </div>
+          <button id="dismissPickerBtn" class="mini" style="margin-top:12px">Dismiss (no result)</button>
+        </div>
+      `;
+      pickerOverlay.querySelectorAll('[data-winner]').forEach(btn => btn.addEventListener('click', () => declareWinner(btn.dataset.winner)));
+      pickerOverlay.querySelector('#dismissPickerBtn').addEventListener('click', async () => {
+        pickerOverlay.classList.add('hidden');
+        await patchState({ timer_mode: 'idle', timer_secs: 0 });
+      });
+    }
+
+    async function declareWinner(teamKey) {
+      pickerOverlay.classList.add('hidden');
+      stopLocalTimer();
+      const patch = { [teamKey]: Number(state[teamKey] || 0) + 3, round: Number(state.round || 1) + 1, timer_mode: 'idle', timer_secs: 0 };
+      const res = await patchState(patch);
+      if (res.error) { alert(res.error); return; }
+      addLog(`Winner: ${TEAM_META[teamKey].name} (+3)`);
+      showWinnerResult(teamKey);
+    }
+
+    function showWinnerResult(teamKey) {
+      const t = TEAM_META[teamKey];
+      resultOverlay.classList.remove('hidden');
+      resultOverlay.style.background = `linear-gradient(180deg, ${t.color}26 0%, rgba(0,0,0,.95) 50%)`;
+      resultOverlay.innerHTML = `
+        <div class="result-inner">
+          <div class="result-title bebas" style="font-size:52px">🏆 WINNER</div>
+          <div class="result-team" style="color:${t.color}">${t.name}</div>
+          <div class="result-points" style="font-size:28px">+3 points awarded</div>
+          <button class="result-continue" id="continueBtn">Continue →</button>
+        </div>
+      `;
+      for (let i = 0; i < 55; i += 1) {
+        const dot = document.createElement('span');
+        dot.className = 'confetti';
+        dot.style.left = `${Math.random() * 100}%`;
+        dot.style.background = t.color;
+        dot.style.animationDuration = `${2 + Math.random() * 2.2}s`;
+        dot.style.animationDelay = `${Math.random() * .5}s`;
+        resultOverlay.appendChild(dot);
+      }
+      resultOverlay.querySelector('#continueBtn').addEventListener('click', () => {
+        resultOverlay.classList.add('hidden');
+        resultOverlay.innerHTML = '';
+      });
+    }
+
+    function renderAll() { renderHost(); renderProjector(); }
+
+    function setupTabs() {
+      if (mode !== 'both') return;
+      tabsEl.classList.remove('hidden');
+      hostEl.classList.remove('hidden');
+      projectorEl.classList.add('hidden');
+      tabsEl.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        hostEl.classList.toggle('hidden', tab !== 'host');
+        projectorEl.classList.toggle('hidden', tab !== 'projector');
+      }));
+    }
+
+    async function boot() {
+      if (!SUPABASE_URL.includes('http') || SUPABASE_ANON_KEY.startsWith('YOUR_')) {
+        document.body.insertAdjacentHTML('beforeend', '<div class="layout"><div class="panel"><h2>Set Supabase credentials first</h2><p>Add your URL and anon key at the top of this file.</p></div></div>');
+        return;
+      }
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      try {
+        applyIncomingState(await ensureRow());
+      } catch (err) {
+        document.body.insertAdjacentHTML('beforeend', `<div class="layout"><div class="panel">Failed to load state: ${err.message}</div></div>`);
+        return;
+      }
+      if (mode === 'host') hostEl.classList.remove('hidden');
+      if (mode === 'projector') projectorEl.classList.remove('hidden');
+      if (mode === 'both') setupTabs();
+      renderAll();
+      supabase.channel('challenge_state_row').on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'challenge_state',
+        filter: 'id=eq.1'
+      }, payload => applyIncomingState(payload.new)).subscribe();
+    }
+
+    boot();
+  </script>
+</body>
+</html>
