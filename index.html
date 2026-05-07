@@ -66,9 +66,9 @@
     .headline { font-family: 'Bebas Neue', sans-serif; font-size: 42px; margin-top: 4px; line-height: 1; }
     .divider { height: 2px; background: var(--red); margin: 8px 0 10px; }
     .cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; flex: 1; }
-    .card { background: #101010; border: 1px solid #242424; border-radius: 10px; padding: 16px; color: #999; font-size: 18px; min-height: 130px; display: flex; flex-direction: column; gap: 8px; }
+    .card { background: #101010; border: 1px solid #242424; border-radius: 10px; padding: 16px; color: #999; font-size: 17px; line-height: 1.5; min-height: 130px; }
     .card-step { font-family: 'Bebas Neue', sans-serif; font-size: 32px; color: #CC3318; line-height: 1; }
-    .card-strong { color: #F5F0E8; font-weight: 700; }
+    .card strong { color: #F5F0E8; font-weight: 700; }
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.87); z-index: 120; display: flex; align-items: center; justify-content: center; padding: 20px; }
     .overlay-panel { width: min(920px,95vw); background: #101010; border: 1px solid #222; border-radius: 14px; padding: 20px; text-align: center; }
     .winner-grid { margin-top: 16px; display: grid; grid-template-columns: repeat(2,minmax(130px,1fr)); gap: 12px; }
@@ -256,7 +256,7 @@
     }
 
     async function resolveChallengeOutcome() {
-      const res = await patchState({ timer_mode: 'idle', timer_secs: 0 });
+      const res = await patchState({ timer_mode: 'idle', timer_secs: 0, round: Number(state.round || 1) + 1 });
       if (res.error) { alert(res.error); return; }
       const winner = getLeadingTeamKey();
       if (!winner) addLog('Challenge ended - tie');
@@ -431,9 +431,9 @@
             <div class="headline">WIN CHALLENGES · SCORE POINTS · MAKE YOUR COLOUR WIN</div>
             <div class="divider"></div>
             <div class="cards">
-              <div class="card"><div class="card-step">1</div><span class="card-strong">Team up</span> with any 2 people wearing the <span class="card-strong">same wristband colour</span> as you</div>
-              <div class="card"><div class="card-step">2</div><span class="card-strong">Head to a challenge station</span> - look for the balloons - where you'll face a team of a <span class="card-strong">different colour</span></div>
-              <div class="card"><div class="card-step">3</div><span class="card-strong">Win the face-off</span> and your colour earns <span class="card-strong">+3 points</span> on the board</div>
+              <div class="card"><div class="card-step">1</div>Team up with <strong>any 2 people</strong> wearing the <strong>same wristband colour</strong> as you</div>
+              <div class="card"><div class="card-step">2</div>Head to a <strong>challenge station</strong> — look for the balloons — where you'll face a <strong>team of a different colour</strong></div>
+              <div class="card"><div class="card-step">3</div>Win the face-off and your colour earns <strong>+3 points</strong> on the board</div>
             </div>
           </div>
         </div>
