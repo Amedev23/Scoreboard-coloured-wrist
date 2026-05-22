@@ -19,6 +19,8 @@
       --blue: #2B6CB0;
       --green: #276749;
       --yellow: #B7791F;
+      --orange: #DD6B20;
+      --purple: #805AD5;
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--cream); font-family: 'DM Sans', sans-serif; }
@@ -59,6 +61,8 @@
     .team-blue { background: var(--blue); }
     .team-green { background: var(--green); }
     .team-yellow { background: var(--yellow); }
+    .team-orange { background: var(--orange); }
+    .team-purple { background: var(--purple); }
     .projector-wrap { max-width: 1365px; margin: 0 auto; width: 100%; height: 640px; background: #000; border: 1px solid #171717; display: grid; grid-template-rows: 84px 92px auto auto; overflow: hidden; position: relative; }
     .proj-header { position: relative; display: flex; align-items: center; justify-content: center; padding: 4px 14px 2px; border-bottom: 1px solid #121212; }
     .brand { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
@@ -69,19 +73,19 @@
     .digits { font-family: 'Bebas Neue', sans-serif; font-size: 72px; line-height: 1; }
     .pulse { animation: pulse .9s infinite; }
     @keyframes pulse { 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.08);} }
-    .scores { padding: 10px 16px; display: grid; gap: 7px; align-content: start; }
-    .score-row { display: grid; grid-template-columns: 110px 1fr 64px; align-items: center; gap: 8px; height: 36px; }
+    .scores { padding: 8px 16px; display: grid; gap: 4px; align-content: start; }
+    .score-row { display: grid; grid-template-columns: 110px 1fr 64px; align-items: center; gap: 8px; height: 28px; }
     .score-row.flash .bar-fill { animation: barFlash .4s ease; transform-origin: center; }
     @keyframes barFlash {
       0% { transform: scaleX(1); filter: brightness(1); }
       40% { transform: scaleX(1.03); filter: brightness(1.6); }
       100% { transform: scaleX(1); filter: brightness(1); }
     }
-    .team-name { font-family: 'Bebas Neue', sans-serif; font-size: 24px; }
+    .team-name { font-family: 'Bebas Neue', sans-serif; font-size: 21px; }
     .bar-wrap { position: relative; }
-    .bar-track { width: 100%; height: 22px; background: #161616; border-radius: 99px; overflow: hidden; }
+    .bar-track { width: 100%; height: 18px; background: #161616; border-radius: 99px; overflow: hidden; }
     .bar-fill { height: 100%; width: 0%; border-radius: 99px; transition: width 550ms cubic-bezier(0.34, 1.56, 0.64, 1); }
-    .score-num { text-align: right; font-family: 'Bebas Neue', sans-serif; font-size: 28px; }
+    .score-num { text-align: right; font-family: 'Bebas Neue', sans-serif; font-size: 24px; }
     .mission { border-top: 1px solid #121212; padding: 14px 18px 14px; display: flex; flex-direction: column; justify-content: space-between; flex: 1; align-self: stretch; height: 100%; }
     .eyebrow { color: var(--red); letter-spacing: .1em; font-weight: 700; font-size: 14px; }
     .headline { font-family: 'Bebas Neue', sans-serif; font-size: 42px; margin-top: 4px; line-height: 1; }
@@ -163,11 +167,13 @@
       red: { name: 'RED', color: '#CC3318' },
       blue: { name: 'BLUE', color: '#2B6CB0' },
       green: { name: 'GREEN', color: '#276749' },
-      yellow: { name: 'YELLOW', color: '#B7791F' }
+      yellow: { name: 'YELLOW', color: '#B7791F' },
+      orange: { name: 'ORANGE', color: '#DD6B20' },
+      purple: { name: 'PURPLE', color: '#805AD5' }
     };
-    const TEAM_KEYS = ['red', 'blue', 'green', 'yellow'];
+    const TEAM_KEYS = ['red', 'blue', 'green', 'yellow', 'orange', 'purple'];
     const TIMER_KEYS = ['timer_mode', 'timer_secs'];
-    const DEFAULT_STATE = { id: 1, red: 0, blue: 0, green: 0, yellow: 0, round: 1, timer_mode: 'idle', timer_secs: 0, updated_at: null };
+    const DEFAULT_STATE = { id: 1, red: 0, blue: 0, green: 0, yellow: 0, orange: 0, purple: 0, round: 1, timer_mode: 'idle', timer_secs: 0, updated_at: null };
 
     const modeParam = new URLSearchParams(location.search).get('mode');
     const mode = modeParam === 'host' || modeParam === 'projector' ? modeParam : 'both';
@@ -192,12 +198,7 @@
     let hostTimer = null;
     let challengeOutcomeShown = false;
     let hasReceivedState = false;
-    const scoreFxState = {
-      red: { flash: false, flashTimer: null },
-      blue: { flash: false, flashTimer: null },
-      green: { flash: false, flashTimer: null },
-      yellow: { flash: false, flashTimer: null }
-    };
+    const scoreFxState = Object.fromEntries(TEAM_KEYS.map(k => [k, { flash: false, flashTimer: null }]));
     const preTimerDraft = { min: '', sec: '' };
     const chalTimerDraft = { min: '', sec: '' };
     let hostUiMounted = false;
@@ -230,16 +231,9 @@
     }
 
     function rowPayloadFromState(next) {
-      return {
-        red: next.red,
-        blue: next.blue,
-        green: next.green,
-        yellow: next.yellow,
-        round: next.round,
-        timer_mode: next.timer_mode,
-        timer_secs: next.timer_secs,
-        updated_at: new Date().toISOString()
-      };
+      const payload = { round: next.round, timer_mode: next.timer_mode, timer_secs: next.timer_secs, updated_at: new Date().toISOString() };
+      TEAM_KEYS.forEach(k => { payload[k] = next[k]; });
+      return payload;
     }
 
     function applyRpcRow(data) {
@@ -658,7 +652,7 @@
         }
         if (t.id === 'resetAllBtn') {
           if (!confirm('Reset all scores to 0?')) return;
-          patchState({ red: 0, blue: 0, green: 0, yellow: 0, round: 1, timer_mode: 'idle', timer_secs: 0 }).then(() => addLog('All scores reset'));
+          patchState({ ...Object.fromEntries(TEAM_KEYS.map(k => [k, 0])), round: 1, timer_mode: 'idle', timer_secs: 0 }).then(() => addLog('All scores reset'));
         }
       });
     }
@@ -683,10 +677,7 @@
         </div>
         <div class="panel">
           <div class="score-buttons">
-            <button class="team-btn team-red" data-award="red">RED +3</button>
-            <button class="team-btn team-blue" data-award="blue">BLUE +3</button>
-            <button class="team-btn team-green" data-award="green">GREEN +3</button>
-            <button class="team-btn team-yellow" data-award="yellow">YELLOW +3</button>
+            ${TEAM_KEYS.map(k => `<button class="team-btn team-${k}" data-award="${k}">${TEAM_META[k].name} +3</button>`).join('')}
           </div>
           <div class="row" style="margin-top:10px"><button id="undoBtn" class="mini undo-cta">Undo my last</button></div>
         </div>
