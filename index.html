@@ -159,7 +159,9 @@
       green: { name: 'GREEN', color: '#276749' },
       yellow: { name: 'YELLOW', color: '#B7791F' }
     };
-    const DEFAULT_STATE = { id: 1, red: 0, blue: 0, green: 0, yellow: 0, round: 1, timer_mode: 'idle', timer_secs: 0 };
+    const TEAM_KEYS = ['red', 'blue', 'green', 'yellow'];
+    const TIMER_KEYS = ['timer_mode', 'timer_secs'];
+    const DEFAULT_STATE = { id: 1, red: 0, blue: 0, green: 0, yellow: 0, round: 1, timer_mode: 'idle', timer_secs: 0, updated_at: null };
 
     const modeParam = new URLSearchParams(location.search).get('mode');
     const mode = modeParam === 'host' || modeParam === 'projector' ? modeParam : 'both';
@@ -199,6 +201,44 @@
       return `${m}:${s}`;
     }
 
+
+    function stateUpdatedAtMs(row) {
+      const raw = row && row.updated_at;
+      if (!raw) return 0;
+      const ms = Date.parse(raw);
+      return Number.isFinite(ms) ? ms : 0;
+    }
+
+    function isTimerOnlyPatch(patch) {
+      const keys = Object.keys(patch);
+      return keys.length > 0 && keys.every(k => TIMER_KEYS.includes(k));
+    }
+
+    function buildNextState(patch) {
+      const next = { ...state, ...patch };
+      TEAM_KEYS.forEach(k => { next[k] = Math.max(0, Number(next[k] || 0)); });
+      return next;
+    }
+
+    function rowPayloadFromState(next) {
+      return {
+        red: next.red,
+        blue: next.blue,
+        green: next.green,
+        yellow: next.yellow,
+        round: next.round,
+        timer_mode: next.timer_mode,
+        timer_secs: next.timer_secs,
+        updated_at: new Date().toISOString()
+      };
+    }
+
+    function applyRpcRow(data) {
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row) applyIncomingState(row, true);
+      return row;
+    }
+
     function hasPlaceholderSupabaseConfig() {
       const url = String(SUPABASE_URL || '').trim();
       const key = String(SUPABASE_ANON_KEY || '').trim();
@@ -223,25 +263,33 @@
 
     async function patchState(patch, options = {}) {
       const { optimistic = true, awaitRemote = true } = options;
-      const next = { ...state, ...patch };
-      ['red', 'blue', 'green', 'yellow'].forEach(k => next[k] = Math.max(0, Number(next[k] || 0)));
+      const timerOnly = isTimerOnlyPatch(patch);
+      const next = timerOnly ? { ...state, ...patch } : buildNextState(patch);
+
       if (isLocalOnly || !supabaseClient) {
+        const local = { ...next, updated_at: new Date().toISOString() };
         try {
-          localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(next));
+          localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(local));
         } catch (err) {
           console.warn('Could not persist local state:', err);
         }
-        applyIncomingState(next, true);
-        return next;
+        applyIncomingState(local, true);
+        return local;
       }
 
-      if (optimistic) applyIncomingState(next, true);
-      const writePromise = supabaseClient.from('challenge_state').update(next).eq('id', 1).select('*').single();
+      const dbPatch = timerOnly
+        ? { ...patch, updated_at: new Date().toISOString() }
+        : rowPayloadFromState(next);
+
+      if (optimistic) applyIncomingState({ ...next, updated_at: dbPatch.updated_at }, true);
+
+      const writePromise = supabaseClient.from('challenge_state').update(dbPatch).eq('id', 1).select('*').single();
 
       if (!awaitRemote) {
         writePromise.then(({ data, error }) => {
           if (error) {
             console.error('Background state sync failed:', error.message);
+            showToast('Sync failed — check connection', '#FC8181');
             return;
           }
           applyIncomingState(data, true);
@@ -257,8 +305,16 @@
 
     function applyIncomingState(nextState, fromHostWrite = false) {
       const incoming = { ...DEFAULT_STATE, ...nextState };
+      TEAM_KEYS.forEach(k => { incoming[k] = Math.max(0, Number(incoming[k] || 0)); });
+
+      if (hasReceivedState && stateUpdatedAtMs(incoming) > 0 && stateUpdatedAtMs(state) > 0) {
+        if (stateUpdatedAtMs(incoming) < stateUpdatedAtMs(state)) {
+          return;
+        }
+      }
+
       const increasedTeams = hasReceivedState
-        ? ['red', 'blue', 'green', 'yellow'].filter(k => Number(incoming[k] || 0) > Number(state[k] || 0))
+        ? TEAM_KEYS.filter(k => Number(incoming[k] || 0) > Number(state[k] || 0))
         : [];
 
       previousState = state;
@@ -314,18 +370,61 @@
       if (sessionActions.length > 30) sessionActions.shift();
     }
 
-    function awardTeam(teamKey, isManual = false) {
-      patchState({
+    async function awardTeam(teamKey, isManual = false) {
+      if (!TEAM_KEYS.includes(teamKey)) return;
+
+      const optimistic = buildNextState({
         [teamKey]: Number(state[teamKey] || 0) + 3,
-        round: Number(state.round || 1) + 1
-      }, { optimistic: true, awaitRemote: false });
+        round: Number(state.round || 1) + 1,
+        updated_at: new Date().toISOString()
+      });
+      applyIncomingState(optimistic, true);
       addLog(`${TEAM_META[teamKey].name} +3`);
       if (!isManual) pushSessionAction({ type: 'award', team: teamKey, delta: -3 });
+
+      if (isLocalOnly || !supabaseClient) {
+        try {
+          localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(optimistic));
+        } catch (err) {
+          console.warn('Could not persist local state:', err);
+        }
+        return;
+      }
+
+      const { data, error } = await supabaseClient.rpc('award_team', { p_team: teamKey, p_points: 3 });
+      if (error) {
+        console.error('award_team RPC failed:', error.message);
+        showToast('Could not save score — tap again', '#FC8181');
+        try { applyIncomingState(await ensureRow()); } catch (e) { console.error(e); }
+        return;
+      }
+      applyRpcRow(data);
     }
 
     async function adjustTeam(teamKey, delta) {
-      const res = await patchState({ [teamKey]: Math.max(0, Number(state[teamKey] || 0) + delta) });
-      if (!res.error) addLog(`${TEAM_META[teamKey].name} ${delta > 0 ? '+' : ''}${delta}`);
+      if (!TEAM_KEYS.includes(teamKey)) return;
+
+      if (isLocalOnly || !supabaseClient) {
+        const res = await patchState({ [teamKey]: Math.max(0, Number(state[teamKey] || 0) + delta) });
+        if (!res.error) addLog(`${TEAM_META[teamKey].name} ${delta > 0 ? '+' : ''}${delta}`);
+        return;
+      }
+
+      const optimistic = buildNextState({
+        [teamKey]: Math.max(0, Number(state[teamKey] || 0) + delta),
+        updated_at: new Date().toISOString()
+      });
+      applyIncomingState(optimistic, true);
+
+      const { data, error } = await supabaseClient.rpc('adjust_team_score', { p_team: teamKey, p_delta: delta });
+      if (error) {
+        console.error('adjust_team_score RPC failed:', error.message);
+        showToast('Could not adjust score', '#FC8181');
+        try { applyIncomingState(await ensureRow()); } catch (e) { console.error(e); }
+        return;
+      }
+      applyRpcRow(data);
+      addLog(`${TEAM_META[teamKey].name} ${delta > 0 ? '+' : ''}${delta}`);
     }
 
     async function undoLast() {
@@ -343,7 +442,7 @@
     }
 
     function getLeadingTeamKey() {
-      const teamKeys = ['red', 'blue', 'green', 'yellow'];
+      const teamKeys = TEAM_KEYS;
       const scores = teamKeys.map(k => Number(state[k] || 0));
       const top = Math.max(...scores);
       const leaders = teamKeys.filter(k => Number(state[k] || 0) === top);
@@ -394,9 +493,9 @@
     }
 
     function scoreRows() {
-      const vals = ['red', 'blue', 'green', 'yellow'].map(k => Number(state[k] || 0));
+      const vals = TEAM_KEYS.map(k => Number(state[k] || 0));
       const lead = Math.max(1, ...vals);
-      return ['red', 'blue', 'green', 'yellow'].map(k => {
+      return TEAM_KEYS.map(k => {
         const v = Number(state[k] || 0);
         const width = Math.max(6, (v / lead) * 100);
         const flashClass = scoreFxState[k]?.flash ? ' flash' : '';
@@ -461,7 +560,7 @@
         </div>
         <div class="panel ${controlsHidden || !isAdmin ? 'hidden' : ''}">
           <h3 class="bebas" style="font-size:30px">Manual score adjustment</h3>
-          ${['red','blue','green','yellow'].map(k => `<div class="row" style="margin:8px 0">
+          ${TEAM_KEYS.map(k => `<div class="row" style="margin:8px 0">
             <div style="width:90px;color:${TEAM_META[k].color};font-weight:600">${TEAM_META[k].name}</div>
             <button class="mini" data-adjust="${k}" data-delta="3">+3</button>
             <button class="mini" data-adjust="${k}" data-delta="-3">-3</button>
