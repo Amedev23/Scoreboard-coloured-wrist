@@ -42,7 +42,13 @@
     .undo-cta { padding: 14px 24px; font-size: 16px; background: #B7510F; border-color: #D4601A; color: #F5F0E8; }
     .danger { background: #3a120c; border-color: #6a2a1d; }
     .score-buttons { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; }
-    .team-btn { height: 92px; font-size: 30px; font-family: 'Bebas Neue', sans-serif; color: var(--cream); }
+    .team-btn {
+      height: 92px; font-size: 30px; font-family: 'Bebas Neue', sans-serif; color: var(--cream);
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .team-btn:disabled { opacity: 0.72; cursor: wait; }
     .team-btn.tap-feedback { animation: tapPulse .2s ease; }
     @keyframes tapPulse {
       0% { transform: scale(1); }
@@ -194,6 +200,9 @@
     };
     const preTimerDraft = { min: '', sec: '' };
     const chalTimerDraft = { min: '', sec: '' };
+    let hostUiMounted = false;
+    let awardInFlight = 0;
+    let awardQueue = [];
 
     function secToText(sec) {
       const m = Math.floor(Math.max(0, sec) / 60).toString().padStart(2, '0');
@@ -237,6 +246,56 @@
       const row = Array.isArray(data) ? data[0] : data;
       if (row) applyIncomingState(row, true);
       return row;
+    }
+
+
+    function isFullReset(row) {
+      return Number(row.round) === 1 && TEAM_KEYS.every(k => Number(row[k] || 0) === 0)
+        && row.timer_mode === 'idle' && Number(row.timer_secs) === 0;
+    }
+
+    function mergeIncomingState(raw) {
+      const incoming = { ...DEFAULT_STATE, ...raw };
+      TEAM_KEYS.forEach(k => { incoming[k] = Math.max(0, Number(incoming[k] || 0)); });
+
+      if (!hasReceivedState || isFullReset(incoming)) return incoming;
+
+      const merged = { ...incoming };
+      TEAM_KEYS.forEach(k => {
+        merged[k] = Math.max(Number(state[k] || 0), Number(incoming[k] || 0));
+      });
+      merged.round = Math.max(Number(state.round || 1), Number(incoming.round || 1));
+
+      const incTs = stateUpdatedAtMs(incoming);
+      const curTs = stateUpdatedAtMs(state);
+      if (incTs >= curTs) {
+        merged.timer_mode = incoming.timer_mode;
+        merged.timer_secs = incoming.timer_secs;
+        merged.updated_at = incoming.updated_at;
+      } else {
+        merged.timer_mode = state.timer_mode;
+        merged.timer_secs = state.timer_secs;
+        merged.updated_at = state.updated_at;
+      }
+      return merged;
+    }
+
+    function hostNeedsFullRender() {
+      return !hostUiMounted;
+    }
+
+    function updateHostChrome() {
+      if (!(mode === 'host' || mode === 'both') || !hostUiMounted) return;
+      const status = hostEl.querySelector('#hostStatus');
+      if (status) status.textContent = `Round ${state.round} · Timer ${secToText(state.timer_secs)} (${state.timer_mode})`;
+      const log = hostEl.querySelector('#hostLog');
+      if (log) log.innerHTML = logItems.map(l => `<li>${l}</li>`).join('') || '<li>No results yet</li>';
+      const rt = hostEl.querySelector('#hostRtBadge');
+      if (rt) rt.innerHTML = `<span class="rt-dot" style="background:${realtimeColor}"></span>${realtimeStatus}`;
+      TEAM_KEYS.forEach(k => {
+        const cur = hostEl.querySelector(`[data-current="${k}"]`);
+        if (cur) cur.textContent = String(state[k]);
+      });
     }
 
     function hasPlaceholderSupabaseConfig() {
@@ -304,14 +363,14 @@
     }
 
     function applyIncomingState(nextState, fromHostWrite = false) {
-      const incoming = { ...DEFAULT_STATE, ...nextState };
-      TEAM_KEYS.forEach(k => { incoming[k] = Math.max(0, Number(incoming[k] || 0)); });
-
-      if (hasReceivedState && stateUpdatedAtMs(incoming) > 0 && stateUpdatedAtMs(state) > 0) {
-        if (stateUpdatedAtMs(incoming) < stateUpdatedAtMs(state)) {
-          return;
-        }
+      if (awardInFlight > 0 && !fromHostWrite) {
+        const peek = mergeIncomingState(nextState);
+        const timerOnlyChange = TEAM_KEYS.every(k => Number(peek[k] || 0) === Number(state[k] || 0))
+          && Number(peek.round) === Number(state.round || 1);
+        if (!timerOnlyChange) return;
       }
+
+      const incoming = mergeIncomingState(nextState);
 
       const increasedTeams = hasReceivedState
         ? TEAM_KEYS.filter(k => Number(incoming[k] || 0) > Number(state[k] || 0))
@@ -353,7 +412,7 @@
     function addLog(txt) {
       logItems.unshift(`${new Date().toLocaleTimeString()} - ${txt}`);
       logItems = logItems.slice(0, 10);
-      renderHost();
+      updateHostChrome();
     }
 
     function showToast(message, color) {
@@ -371,34 +430,63 @@
     }
 
     async function awardTeam(teamKey, isManual = false) {
-      if (!TEAM_KEYS.includes(teamKey)) return;
+      if (!TEAM_KEYS.includes(teamKey)) return false;
 
+      awardInFlight += 1;
       const optimistic = buildNextState({
         [teamKey]: Number(state[teamKey] || 0) + 3,
-        round: Number(state.round || 1) + 1,
-        updated_at: new Date().toISOString()
+        round: Number(state.round || 1) + 1
       });
       applyIncomingState(optimistic, true);
-      addLog(`${TEAM_META[teamKey].name} +3`);
-      if (!isManual) pushSessionAction({ type: 'award', team: teamKey, delta: -3 });
 
-      if (isLocalOnly || !supabaseClient) {
-        try {
-          localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(optimistic));
-        } catch (err) {
-          console.warn('Could not persist local state:', err);
+      try {
+        if (isLocalOnly || !supabaseClient) {
+          const local = { ...optimistic, updated_at: new Date().toISOString() };
+          try { localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(local)); } catch (err) {
+            console.warn('Could not persist local state:', err);
+          }
+        } else {
+          const { data, error } = await supabaseClient.rpc('award_team', { p_team: teamKey, p_points: 3 });
+          if (error) throw error;
+          applyRpcRow(data);
         }
-        return;
+        addLog(`${TEAM_META[teamKey].name} +3`);
+        if (!isManual) pushSessionAction({ type: 'award', team: teamKey, delta: -3 });
+        showToast(`${TEAM_META[teamKey].name} +3`, TEAM_META[teamKey].color);
+        return true;
+      } catch (err) {
+        console.error('award_team failed:', err.message || err);
+        showToast('Could not save — tap again', '#FC8181');
+        try { applyIncomingState(await ensureRow(), true); } catch (e) { console.error(e); }
+        return false;
+      } finally {
+        awardInFlight = Math.max(0, awardInFlight - 1);
+        drainAwardQueue();
       }
+    }
 
-      const { data, error } = await supabaseClient.rpc('award_team', { p_team: teamKey, p_points: 3 });
-      if (error) {
-        console.error('award_team RPC failed:', error.message);
-        showToast('Could not save score — tap again', '#FC8181');
-        try { applyIncomingState(await ensureRow()); } catch (e) { console.error(e); }
+    function drainAwardQueue() {
+      if (awardInFlight > 0 || !awardQueue.length) return;
+      const next = awardQueue.shift();
+      const btn = hostEl.querySelector(`[data-award="${next}"]`);
+      if (btn) handleAwardClick(next, btn);
+    }
+
+    async function handleAwardClick(teamKey, btn) {
+      if (!TEAM_KEYS.includes(teamKey)) return;
+      if (awardInFlight > 0) {
+        awardQueue.push(teamKey);
         return;
       }
-      applyRpcRow(data);
+      btn.disabled = true;
+      const ok = await awardTeam(teamKey);
+      btn.disabled = false;
+      if (ok) {
+        btn.classList.remove('tap-feedback');
+        void btn.offsetWidth;
+        btn.classList.add('tap-feedback');
+        setTimeout(() => btn.classList.remove('tap-feedback'), 220);
+      }
     }
 
     async function adjustTeam(teamKey, delta) {
@@ -489,7 +577,9 @@
     function setRealtimeStatus(label, color) {
       realtimeStatus = label;
       realtimeColor = color;
-      renderAll();
+      updateHostChrome();
+      const projRt = projectorEl.querySelector('.proj-badges .badge-rt');
+      if (projRt) projRt.innerHTML = `<span class="rt-dot" style="background:${realtimeColor}"></span>${realtimeStatus}`;
     }
 
     function scoreRows() {
@@ -507,6 +597,72 @@
       }).join('');
     }
 
+
+    function setupHostEvents() {
+      if (hostEl.dataset.eventsBound === '1') return;
+      hostEl.dataset.eventsBound = '1';
+      hostEl.addEventListener('click', (e) => {
+        const awardBtn = e.target.closest('[data-award]');
+        if (awardBtn) {
+          e.preventDefault();
+          handleAwardClick(awardBtn.dataset.award, awardBtn);
+          return;
+        }
+        const adjustBtn = e.target.closest('[data-adjust]');
+        if (adjustBtn) {
+          adjustTeam(adjustBtn.dataset.adjust, Number(adjustBtn.dataset.delta));
+          return;
+        }
+        const t = e.target.closest('button');
+        if (!t || !hostEl.contains(t)) return;
+        if (t.id === 'undoBtn') { undoLast(); return; }
+        if (t.id === 'toggleControlsBtn') {
+          controlsHidden = !controlsHidden;
+          hostUiMounted = false;
+          renderHost();
+          return;
+        }
+        if (t.id === 'pinBtn') {
+          const pin = hostEl.querySelector('#pinInput')?.value;
+          const err = hostEl.querySelector('#pinError');
+          if (pin === ADMIN_PIN) {
+            isAdmin = true;
+            if (err) err.textContent = '';
+            hostUiMounted = false;
+            renderHost();
+          } else if (err) err.textContent = 'Wrong PIN';
+          return;
+        }
+        if (t.id === 'logoutAdminBtn') {
+          isAdmin = false;
+          hostUiMounted = false;
+          renderHost();
+          return;
+        }
+        if (t.id === 'startPreBtn') {
+          const m = Math.max(0, Number(hostEl.querySelector('#preMin')?.value || 0));
+          const s = Math.min(59, Math.max(0, Number(hostEl.querySelector('#preSec')?.value || 0)));
+          startLocalTimer('pre', (m * 60) + s);
+          return;
+        }
+        if (t.id === 'startChalBtn') {
+          const m = Math.max(0, Number(hostEl.querySelector('#chalMin')?.value || 0));
+          const s = Math.min(59, Math.max(0, Number(hostEl.querySelector('#chalSec')?.value || 0)));
+          startLocalTimer('chal', (m * 60) + s);
+          return;
+        }
+        if (t.id === 'stopTimerBtn') {
+          stopLocalTimer();
+          patchState({ timer_mode: 'idle', timer_secs: 0 });
+          return;
+        }
+        if (t.id === 'resetAllBtn') {
+          if (!confirm('Reset all scores to 0?')) return;
+          patchState({ red: 0, blue: 0, green: 0, yellow: 0, round: 1, timer_mode: 'idle', timer_secs: 0 }).then(() => addLog('All scores reset'));
+        }
+      });
+    }
+
     function renderHost() {
       if (!(mode === 'host' || mode === 'both')) return;
       // Preserve current timer input text across host re-renders.
@@ -519,11 +675,11 @@
           <div class="row">
             <h2 class="bebas" style="font-size:38px">Host Controls</h2>
             <div class="spacer"></div>
-            <span class="badge badge-rt"><span class="rt-dot" style="background:${realtimeColor}"></span>${realtimeStatus}</span>
+            <span id="hostRtBadge" class="badge badge-rt"><span class="rt-dot" style="background:${realtimeColor}"></span>${realtimeStatus}</span>
             ${isAdmin ? '<span class="badge badge-admin">Admin</span>' : ''}
             <button id="toggleControlsBtn" class="mini">${controlsHidden ? 'Show controls' : 'Hide controls'}</button>
           </div>
-          <p style="margin:6px 0 0;color:#bcbcbc">Round ${state.round} · Timer ${secToText(state.timer_secs)} (${state.timer_mode})</p>
+          <p id="hostStatus" style="margin:6px 0 0;color:#bcbcbc">Round ${state.round} · Timer ${secToText(state.timer_secs)} (${state.timer_mode})</p>
         </div>
         <div class="panel">
           <div class="score-buttons">
@@ -564,56 +720,18 @@
             <div style="width:90px;color:${TEAM_META[k].color};font-weight:600">${TEAM_META[k].name}</div>
             <button class="mini" data-adjust="${k}" data-delta="3">+3</button>
             <button class="mini" data-adjust="${k}" data-delta="-3">-3</button>
-            <div>Current: <b>${state[k]}</b></div>
+            <div>Current: <b data-current="${k}">${state[k]}</b></div>
           </div>`).join('')}
           <div class="row" style="margin-top:8px"><button id="resetAllBtn" class="mini danger">Reset all scores</button></div>
         </div>
         <div class="panel">
           <h3 class="bebas" style="font-size:30px">My actions this session</h3>
-          <ol style="margin:0;padding-left:16px">${logItems.map(l => `<li>${l}</li>`).join('') || '<li>No results yet</li>'}</ol>
+          <ol id="hostLog" style="margin:0;padding-left:16px">${logItems.map(l => `<li>${l}</li>`).join('') || '<li>No results yet</li>'}</ol>
         </div>
       `;
 
-      hostEl.querySelectorAll('[data-award]').forEach(btn => btn.addEventListener('click', () => {
-        const key = btn.dataset.award;
-        btn.classList.remove('tap-feedback');
-        void btn.offsetWidth;
-        btn.classList.add('tap-feedback');
-        setTimeout(() => btn.classList.remove('tap-feedback'), 220);
-        showToast(`${TEAM_META[key].name} +3`, TEAM_META[key].color);
-        awardTeam(key);
-      }));
-      hostEl.querySelector('#undoBtn').addEventListener('click', undoLast);
-      hostEl.querySelector('#toggleControlsBtn').addEventListener('click', () => { controlsHidden = !controlsHidden; renderHost(); });
-      const pinBtn = hostEl.querySelector('#pinBtn');
-      pinBtn && pinBtn.addEventListener('click', () => {
-        const pin = hostEl.querySelector('#pinInput').value;
-        const err = hostEl.querySelector('#pinError');
-        if (pin === ADMIN_PIN) { isAdmin = true; err.textContent = ''; renderHost(); } else { err.textContent = 'Wrong PIN'; }
-      });
-      const logout = hostEl.querySelector('#logoutAdminBtn');
-      logout && logout.addEventListener('click', () => { isAdmin = false; renderHost(); });
-      const pre = hostEl.querySelector('#startPreBtn');
-      pre && pre.addEventListener('click', () => {
-        const m = Math.max(0, Number(hostEl.querySelector('#preMin')?.value || 0));
-        const s = Math.min(59, Math.max(0, Number(hostEl.querySelector('#preSec')?.value || 0)));
-        startLocalTimer('pre', (m * 60) + s);
-      });
-      const chal = hostEl.querySelector('#startChalBtn');
-      chal && chal.addEventListener('click', () => {
-        const m = Math.max(0, Number(hostEl.querySelector('#chalMin')?.value || 0));
-        const s = Math.min(59, Math.max(0, Number(hostEl.querySelector('#chalSec')?.value || 0)));
-        startLocalTimer('chal', (m * 60) + s);
-      });
-      const stop = hostEl.querySelector('#stopTimerBtn');
-      stop && stop.addEventListener('click', async () => { stopLocalTimer(); await patchState({ timer_mode: 'idle', timer_secs: 0 }); });
-      hostEl.querySelectorAll('[data-adjust]').forEach(btn => btn.addEventListener('click', () => adjustTeam(btn.dataset.adjust, Number(btn.dataset.delta))));
-      const reset = hostEl.querySelector('#resetAllBtn');
-      reset && reset.addEventListener('click', async () => {
-        if (!confirm('Reset all scores to 0?')) return;
-        await patchState({ red: 0, blue: 0, green: 0, yellow: 0, round: 1, timer_mode: 'idle', timer_secs: 0 });
-        addLog('All scores reset');
-      });
+      setupHostEvents();
+      hostUiMounted = true;
     }
 
     function renderProjector() {
@@ -704,7 +822,11 @@
       });
     }
 
-    function renderAll() { renderHost(); renderProjector(); }
+    function renderAll(opts = {}) {
+      if (opts.hostFull || hostNeedsFullRender()) renderHost();
+      else updateHostChrome();
+      renderProjector();
+    }
 
     function setupLocalStateSync() {
       window.addEventListener('storage', event => {
